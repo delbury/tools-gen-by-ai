@@ -1,0 +1,155 @@
+/* 全屏遮罩 */
+.qr-scanner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 2147483645;
+  cursor: crosshair;
+  user-select: none;
+}
+
+/* 高亮的选区框 */
+.qr-scanner-selection {
+  position: fixed;
+  border: 2px solid #4F8EF7;
+  background-color: transparent;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4); /* 巧用 box-shadow 实现外围变暗，内部高亮 */
+  z-index: 2147483646;
+  pointer-events: none; /* 让鼠标事件穿透给 overlay */
+  display: none;
+}
+
+/* 结果展示弹窗容器 */
+.qr-scanner-modal-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* 弹窗主体 */
+.qr-scanner-modal {
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  width: 400px;
+  max-width: 90vw;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #333;
+}
+
+.qr-scanner-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 12px;
+}
+
+.qr-scanner-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1a1a2e;
+}
+
+.qr-scanner-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.qr-scanner-close-btn:hover {
+  color: #333;
+}
+
+/* 预览图 */
+.qr-scanner-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 100px;
+}
+
+.qr-scanner-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* 结果内容区 */
+.qr-scanner-result {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px;
+  word-break: break-all;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 60px;
+}
+
+.qr-scanner-success {
+  color: #28a745;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.qr-scanner-error {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+/* 按钮区 */
+.qr-scanner-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.qr-scanner-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.qr-scanner-btn-primary {
+  background-color: #4F8EF7;
+  color: white;
+}
+
+.qr-scanner-btn-primary:hover {
+  background-color: #3b74d6;
+}
+
+.qr-scanner-btn-secondary {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+.qr-scanner-btn-secondary:hover {
+  background-color: #dee2e6;
+}

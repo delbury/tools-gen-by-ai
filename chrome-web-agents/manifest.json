@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Multi AI Agent Hub",
+  "version": "1.0.0",
+  "description": "一键向多个 AI Agent 并行提交文本和图片，统一回显结果",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://www.doubao.com/*",
+    "https://kimi.moonshot.cn/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["agents/base-agent.js", "agents/agent-deepseek.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.doubao.com/*"],
+      "js": ["agents/base-agent.js", "agents/agent-doubao.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://kimi.moonshot.cn/*"],
+      "js": ["agents/base-agent.js", "agents/agent-kimi.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
