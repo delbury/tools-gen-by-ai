@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片全屏排版展示</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #fff;
+        }
+
+        #drop-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 4px dashed rgba(255, 255, 255, 0.4);
+            box-sizing: border-box;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #drop-overlay:hover, #drop-overlay.dragover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 1);
+        }
+
+        #drop-overlay.hidden {
+            display: none;
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+
+        .text {
+            font-size: 28px;
+            letter-spacing: 2px;
+            font-weight: 500;
+        }
+
+        .sub-text {
+            font-size: 16px;
+            margin-top: 10px;
+            color: #aaa;
+        }
+
+        #gallery {
+            display: flex;
+            flex-wrap: wrap;
+            width: 100vw;
+            height: 100vh;
+            justify-content: center;
+            align-content: center;
+            align-items: center;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+
+        #gallery img {
+            object-fit: contain;
+            transition: transform 0.4s ease;
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5); /* 添加微弱的阴影分割图片 */
+        }
+
+        #gallery img:hover {
+            transform: scale(1.05); /* 鼠标悬停时的缩放特效 */
+            z-index: 10;
+            position: relative;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            z-index: 20;
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+
+        #controls.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="drop-overlay">
+        <div class="icon">🖼️</div>
+        <div class="text">点击此处选择图片，或拖拽图片到网页中</div>
+        <div class="sub-text">自动排版布局，完美铺满全屏并且无滚动条</div>
+    </div>
+
+    <input type="file" id="file-input" multiple accept="image/*">
+
+    <div id="gallery"></div>
+
+    <div id="controls" class="hidden">
+        <button class="btn" id="btn-add">+ 继续添加</button>
+        <button class="btn" id="btn-clear">清空全部</button>
+    </div>
+
+    <script>
+        const dropOverlay = document.getElementById('drop-overlay');
+        const gallery = document.getElementById('gallery');
+        const fileInput = document.getElementById('file-input');
+        const controls = document.getElementById('controls');
+        const btnAdd = document.getElementById('btn-add');
+        const btnClear = document.getElementById('btn-clear');
+
+        let allFiles = [];
+
+        function processFiles(files) {
+            const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+            if (imageFiles.length === 0) return;
+
+            allFiles = allFiles.concat(imageFiles);
+            updateUI();
+        }
+
+        function updateUI() {
+            if (allFiles.length > 0) {
+                dropOverlay.classList.add('hidden');
+                controls.classList.remove('hidden');
+            } else {
+                dropOverlay.classList.remove('hidden');
+                controls.classList.add('hidden');
+            }
+            renderGallery();
+        }
+
+        function renderGallery() {
+            gallery.innerHTML = '';
+            const count = allFiles.length;
+            if (count === 0) return;
+
+            // 根据屏幕宽高比计算最佳列数
+            const ratio = window.innerWidth / window.innerHeight;
+            let cols = Math.round(Math.sqrt(count * ratio));
+            
+            // 确保列数合理
+            if (cols < 1) cols = 1;
+            if (cols > count) cols = count;
+
+            // 计算最大行数
+            let rows = Math.ceil(count / cols);
+
+            allFiles.forEach(file => {
+                const img = document.createElement('img');
+                const url = URL.createObjectURL(file);
+                img.src = url;
+                
+                // 图片限制最大宽高，避免撑破容器，外加 margin 确保间距紧凑
+                img.style.maxWidth = `calc(${98 / cols}vw - 8px)`;
+                img.style.maxHeight = `calc(${98 / rows}vh - 8px)`;
+                img.style.margin = '4px';
+                
+                // 图片加载后释放内存引用
+                img.onload = () => URL.revokeObjectURL(url); 
+
+                gallery.appendChild(img);
+            });
+        }
+
+        // 监听窗口大小改变，重新计算排版布局
+        window.addEventListener('resize', () => {
+            if (allFiles.length > 0) {
+                renderGallery();
+            }
+        });
+
+        // 点击事件
+        dropOverlay.addEventListener('click', () => fileInput.click());
+        btnAdd.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            processFiles(e.target.files);
+            // 清空 value 允许重复选择相同文件
+            fileInput.value = '';
+        });
+
+        btnClear.addEventListener('click', () => {
+            allFiles = [];
+            updateUI();
+        });
+
+        // 拖拽事件全屏处理
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        let dragCounter = 0;
+
+        document.body.addEventListener('dragenter', (e) => {
+            if(dragCounter === 0) {
+                dropOverlay.classList.remove('hidden');
+                dropOverlay.classList.add('dragover');
+                controls.classList.add('hidden');
+            }
+            dragCounter++;
+        });
+
+        document.body.addEventListener('dragleave', (e) => {
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropOverlay.classList.remove('dragover');
+                if (allFiles.length > 0) {
+                    dropOverlay.classList.add('hidden');
+                    controls.classList.remove('hidden');
+                }
+            }
+        });
+
+        document.body.addEventListener('drop', (e) => {
+            dragCounter = 0;
+            dropOverlay.classList.remove('dragover');
+            
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            processFiles(files);
+            
+            // 恢复 UI 状态
+            if (allFiles.length > 0) {
+                dropOverlay.classList.add('hidden');
+                controls.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
