@@ -2,8 +2,8 @@ const DOUBAO_SELECTORS = {
   // 查找唯一的或者最大的 textarea 作为输入框，Doubao 中通常是一个 ID 为 chat-input 或者是唯一的 textarea 或者 contenteditable div
   textarea: '#chat-input, textarea.semi-input-textarea, textarea[placeholder*="发消息"], textarea, div[contenteditable="true"]',
   fileInput: 'input[type="file"]',
-  // 可以通过发送图标或者回车
-  messageContainer: '[data-testid="chat-message"], .message-item, .chat-message, div[class*="message"]', // Heuristic selectors
+  // 只计算机器人的回复（或者文本内容部分），避免取到用户的消息导致提前结束
+  messageContainer: '[data-testid="bot_message_content"], [class*="markdown-body"], .flow-markdown-body, div[class*="bot-interactive-message"], [class*="message-content"], [data-testid*="message_content"]',
 };
 
 class DoubaoAgent extends BaseAgent {
@@ -30,6 +30,18 @@ class DoubaoAgent extends BaseAgent {
     }
   }
 
+  getBotMessages() {
+    const allMessages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer);
+    return Array.from(allMessages).filter(el => {
+      // 明确排除带有 user 标识的元素
+      if (el.getAttribute('data-testid')?.includes('user')) return false;
+      if (el.closest('[class*="user"], [data-testid*="user"], [class*="User"]')) return false;
+      // 排除输入框区域可能被误判的元素
+      if (el.closest('#chat-input, textarea, div[contenteditable="true"], [class*="input-container"], [class*="chat-input"]')) return false;
+      return true;
+    });
+  }
+
   async runFlow(text, imageBase64, imageName) {
     console.log('[Doubao] Starting flow...');
     
@@ -46,13 +58,7 @@ class DoubaoAgent extends BaseAgent {
     if (imageBase64) {
       console.log('[Doubao] Uploading image...');
       // 豆包上传图片通常也是一个隐藏的 file input，可能会限制 accept
-      let fileInputs = [];
-      try {
-        const els = await this.waitForElements(DOUBAO_SELECTORS.fileInput, 5000);
-        fileInputs = Array.from(els);
-      } catch (e) {
-        console.warn('[Doubao] Timeout waiting for file input');
-      }
+      let fileInputs = Array.from(document.querySelectorAll(DOUBAO_SELECTORS.fileInput));
       
       // usually the one with accept="image/*" or similar, or just the first one
       const fileInput = fileInputs.find(i => !i.disabled && i.accept && i.accept.includes('image')) || fileInputs.find(i => !i.disabled) || fileInputs[0];
@@ -73,7 +79,9 @@ class DoubaoAgent extends BaseAgent {
       await new Promise(r => setTimeout(r, 800));
     }
 
-    const initialMessages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer).length;
+    const initialMsgs = this.getBotMessages();
+    const initialMessages = initialMsgs.length;
+    const initialLastText = initialMsgs.length > 0 ? (initialMsgs[initialMsgs.length - 1].innerText || initialMsgs[initialMsgs.length - 1].textContent) : '';
 
     console.log('[Doubao] Submitting...');
     const enterEventOptions = {
@@ -99,7 +107,7 @@ class DoubaoAgent extends BaseAgent {
     }
 
     console.log('[Doubao] Waiting for response...');
-    return await this.waitForResponse(initialMessages);
+    return await this.waitForResponse(initialMessages, initialLastText);
   }
 
   async waitForElements(selector, timeout) {
@@ -121,46 +129,57 @@ class DoubaoAgent extends BaseAgent {
     });
   }
 
-  async waitForResponse(initialMessageCount) {
+  async waitForResponse(initialMessageCount, initialLastText) {
     return new Promise((resolve, reject) => {
       let timeoutId;
-      let lastChangeTime = Date.now();
+      let prevTextLength = -1;
+      let unchangedTime = 0;
+      let generationStarted = false;
       
       const checkInterval = setInterval(() => {
-        const messages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer);
-        // Sometimes doubao updates DOM drastically, so checking length > initial might be naïve,
-        // but works as a heuristic. Use innerText length of the last element.
-        if (messages.length > 0 && messages.length >= initialMessageCount) {
-          const lastMessage = messages[messages.length - 1];
-          const textLength = lastMessage.textContent.length;
-          
-          if (Date.now() - lastChangeTime > 3000 && textLength > 0 && messages.length > initialMessageCount) {
-            clearInterval(checkInterval);
-            if (timeoutId) clearTimeout(timeoutId);
-            console.log('[Doubao] Generation complete');
-            
-            const images = Array.from(lastMessage.querySelectorAll('img')).map(img => img.src);
-            resolve({
-              text: lastMessage.innerText || lastMessage.textContent,
-              images: images
-            });
+        const messages = this.getBotMessages();
+        if (messages.length === 0) return;
+
+        const lastMessage = messages[messages.length - 1];
+        const currentText = lastMessage.innerText || lastMessage.textContent;
+        const currentLength = currentText.trim().length;
+
+        if (messages.length > initialMessageCount || (currentText !== initialLastText && currentLength > 0)) {
+          generationStarted = true;
+        }
+
+        if (generationStarted) {
+          if (currentLength > 0) {
+            // "Loading" text heuristics or just general text
+            if (Math.abs(currentLength - prevTextLength) <= 2) {
+              // Only start counting idle time if it's likely not the initial "thinking..." placeholder
+              // Or if we wait long enough
+              unchangedTime += 1000;
+            } else {
+              unchangedTime = 0;
+              prevTextLength = currentLength;
+            }
+
+            // If text has stayed exactly the same length for 4 seconds, we consider it done
+            if (unchangedTime >= 4000) {
+              clearInterval(checkInterval);
+              if (timeoutId) clearTimeout(timeoutId);
+              console.log('[Doubao] Generation complete');
+              
+              const images = Array.from(lastMessage.querySelectorAll('img')).map(img => img.src);
+              resolve({
+                text: currentText,
+                images: images
+              });
+            }
           }
         }
       }, 1000);
 
-      const observer = new MutationObserver(() => {
-        const messages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer);
-        if (messages.length > initialMessageCount) {
-          lastChangeTime = Date.now();
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
       timeoutId = setTimeout(() => {
         clearInterval(checkInterval);
-        observer.disconnect();
         
-        const messages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer);
+        const messages = this.getBotMessages();
         if (messages.length > initialMessageCount) {
           const lastMessage = messages[messages.length - 1];
           resolve({
