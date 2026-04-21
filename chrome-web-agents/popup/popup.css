@@ -231,6 +231,23 @@ input:checked + .slider:before {
   cursor: not-allowed;
 }
 
+.submit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.stop-btn {
+  background-color: var(--error-color);
+}
+
+.stop-btn:hover {
+  background-color: #d63031;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .results-section {
   margin-top: 20px;
   display: flex;

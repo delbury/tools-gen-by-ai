@@ -26,7 +26,13 @@ class KimiAgent extends BaseAgent {
     if (imageBase64) {
       console.log('[Kimi] Uploading image...');
       // Kimi has File inputs, potentially multiple. Getting the one without disabled attribute
-      const fileInputs = Array.from(document.querySelectorAll(KIMI_SELECTORS.fileInput)).reverse();
+      let fileInputs = [];
+      try {
+        const els = await this.waitForElements(KIMI_SELECTORS.fileInput, 5000);
+        fileInputs = Array.from(els).reverse();
+      } catch (e) {
+        console.warn('[Kimi] Timeout waiting for file input');
+      }
       const fileInput = fileInputs.find(i => !i.disabled) || fileInputs[0];
       
       if (fileInput) {

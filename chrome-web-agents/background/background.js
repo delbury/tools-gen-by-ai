@@ -16,6 +16,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleAgentStatus(message.payload);
     sendResponse({ success: true });
   }
+
+  if (message.type === 'CANCEL_TASK') {
+    handleCancelTask(message.payload);
+    sendResponse({ success: true });
+  }
 });
 
 async function handleSubmitTask(payload) {
@@ -140,4 +145,16 @@ function sendTaskUpdate(payload) {
   }).catch(() => {
     // Ignore error if popup is closed
   });
+}
+
+function handleCancelTask(payload) {
+  // simplest & cleanest way to fully abort any active execution inside content scripts
+  // is to force-reload the chat tab.
+  for (const agentId of Object.keys(AGENT_URLS)) {
+    const targetUrl = AGENT_URLS[agentId];
+    const urlParams = new URL(targetUrl);
+    chrome.tabs.query({ url: `*://${urlParams.hostname}/*` }, (tabs) => {
+      tabs.forEach(tab => chrome.tabs.reload(tab.id));
+    });
+  }
 }

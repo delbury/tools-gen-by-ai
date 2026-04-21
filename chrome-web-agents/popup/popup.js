@@ -5,6 +5,7 @@ const imagePreviewContainer = document.getElementById('image-preview-container')
 const imagePreview = document.getElementById('image-preview');
 const removeImageBtn = document.getElementById('remove-image-btn');
 const submitBtn = document.getElementById('submit-btn');
+const stopBtn = document.getElementById('stop-btn');
 const resultsContainer = document.getElementById('results-container');
 
 // State
@@ -13,15 +14,42 @@ let selectedImageName = null;
 let currentTaskId = null;
 
 const reloadBtn = document.getElementById('reload-btn');
+const clearHistoryBtn = document.getElementById('clear-history-btn');
 
 // Event Listeners
 imageUpload.addEventListener('change', handleImageUpload);
 removeImageBtn.addEventListener('click', removeImage);
 submitBtn.addEventListener('click', handleSubmit);
 
+clearHistoryBtn.addEventListener('click', () => {
+  currentTaskId = null;
+  resultsContainer.innerHTML = '';
+  chrome.storage.local.remove('currentTaskState');
+  submitBtn.classList.remove('hidden');
+  stopBtn.classList.add('hidden');
+});
+
 reloadBtn.addEventListener('click', () => {
   chrome.runtime.reload();
 });
+
+stopBtn.addEventListener('click', handleStop);
+
+function handleStop() {
+  if (!currentTaskId) return;
+  chrome.runtime.sendMessage({
+    type: 'CANCEL_TASK',
+    payload: { taskId: currentTaskId }
+  });
+  
+  document.querySelectorAll('.result-card[data-status="pending"], .result-card[data-status="running"]').forEach(card => {
+    card.setAttribute('data-status', 'error');
+    card.querySelector('.result-status').textContent = '已终止';
+    card.querySelector('.result-content').textContent = '任务已由用户手动终止';
+  });
+  saveTaskState();
+  checkAllDone();
+}
 
 promptInput.addEventListener('input', () => {
   chrome.storage.local.set({ inputText: promptInput.value });
@@ -159,8 +187,8 @@ async function handleSubmit() {
 
   saveTaskState();
 
-  submitBtn.disabled = true;
-  submitBtn.textContent = '执行中...';
+  saveTaskState();
+  checkAllDone();
 
   const payload = {
     taskId: currentTaskId,
@@ -178,14 +206,12 @@ async function handleSubmit() {
     
     if (response && response.error) {
       alert('提交失败: ' + response.error);
-      submitBtn.disabled = false;
-      submitBtn.textContent = '提交到选中 Agent';
+      checkAllDone();
     }
   } catch (error) {
     console.error("Error sending message to background:", error);
     alert('与后台服务通信失败，请刷新重试');
-    submitBtn.disabled = false;
-    submitBtn.textContent = '提交到选中 Agent';
+    checkAllDone();
   }
 }
 
@@ -263,10 +289,10 @@ function saveTaskState() {
 function checkAllDone() {
   const pendingOrRunning = document.querySelectorAll('.result-card[data-status="pending"], .result-card[data-status="running"]');
   if (pendingOrRunning.length > 0) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = '执行中...';
+    submitBtn.classList.add('hidden');
+    stopBtn.classList.remove('hidden');
   } else {
-    submitBtn.disabled = false;
-    submitBtn.textContent = '提交到选中 Agent';
+    submitBtn.classList.remove('hidden');
+    stopBtn.classList.add('hidden');
   }
 }

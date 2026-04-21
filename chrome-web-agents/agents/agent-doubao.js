@@ -1,14 +1,33 @@
 const DOUBAO_SELECTORS = {
-  // 查找唯一的或者最大的 textarea 作为输入框，Doubao 中通常是一个 ID 为 chat-input 或者是唯一的 textarea
-  textarea: 'textarea',
+  // 查找唯一的或者最大的 textarea 作为输入框，Doubao 中通常是一个 ID 为 chat-input 或者是唯一的 textarea 或者 contenteditable div
+  textarea: '#chat-input, textarea.semi-input-textarea, textarea[placeholder*="发消息"], textarea, div[contenteditable="true"]',
   fileInput: 'input[type="file"]',
   // 可以通过发送图标或者回车
-  messageContainer: '[data-testid="chat-message"], .message-item, .chat-message', // Heuristic selectors
+  messageContainer: '[data-testid="chat-message"], .message-item, .chat-message, div[class*="message"]', // Heuristic selectors
 };
 
 class DoubaoAgent extends BaseAgent {
   constructor() {
     super('doubao');
+  }
+
+  async pasteImageToElement(element, imageBase64, filename) {
+    if (!imageBase64) return;
+    try {
+      element.focus();
+      const file = this.base64ToFile(imageBase64, filename || 'upload.png');
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      const event = new ClipboardEvent('paste', {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true
+      });
+      element.dispatchEvent(event);
+      console.log('[Doubao] Image pasted via ClipboardEvent');
+    } catch(e) {
+      console.error('[Doubao] Paste image error:', e);
+    }
   }
 
   async runFlow(text, imageBase64, imageName) {
@@ -19,7 +38,7 @@ class DoubaoAgent extends BaseAgent {
     
     // We get all textareas and assume the active one is for chat input (usually at the bottom)
     const textareas = await this.waitForElements(DOUBAO_SELECTORS.textarea, 15000);
-    const textarea = textareas[textareas.length - 1]; // typically the last one
+    const textarea = Array.from(textareas).find(t => t.id === 'chat-input' || (t.placeholder && t.placeholder.includes('消息'))) || textareas[textareas.length - 1]; // typically the last one
     
     if (!textarea) throw new Error('Cannot find chat input textarea');
     console.log('[Doubao] Found textarea');
@@ -27,37 +46,55 @@ class DoubaoAgent extends BaseAgent {
     if (imageBase64) {
       console.log('[Doubao] Uploading image...');
       // 豆包上传图片通常也是一个隐藏的 file input，可能会限制 accept
-      const fileInputs = Array.from(document.querySelectorAll(DOUBAO_SELECTORS.fileInput));
+      let fileInputs = [];
+      try {
+        const els = await this.waitForElements(DOUBAO_SELECTORS.fileInput, 5000);
+        fileInputs = Array.from(els);
+      } catch (e) {
+        console.warn('[Doubao] Timeout waiting for file input');
+      }
+      
       // usually the one with accept="image/*" or similar, or just the first one
-      const fileInput = fileInputs.find(input => input.accept && input.accept.includes('image')) || fileInputs[0];
+      const fileInput = fileInputs.find(i => !i.disabled && i.accept && i.accept.includes('image')) || fileInputs.find(i => !i.disabled) || fileInputs[0];
       
       if (fileInput) {
         await this.uploadImageToFileSelector(fileInput, imageBase64, imageName);
         await new Promise(r => setTimeout(r, 2000));
       } else {
-        console.warn('[Doubao] File input not found.');
+        console.warn('[Doubao] File input not found, falling back to pasting directly.');
+        await this.pasteImageToElement(textarea, imageBase64, imageName);
+        await new Promise(r => setTimeout(r, 2500));
       }
     }
 
     if (text) {
       console.log('[Doubao] Inputting text...');
       await this.inputText(textarea, text);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 800));
     }
 
     const initialMessages = document.querySelectorAll(DOUBAO_SELECTORS.messageContainer).length;
 
     console.log('[Doubao] Submitting...');
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    const enterEventOptions = {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true, composed: true
+    };
+    textarea.dispatchEvent(new KeyboardEvent('keydown', enterEventOptions));
+    textarea.dispatchEvent(new KeyboardEvent('keypress', enterEventOptions));
+    textarea.dispatchEvent(new KeyboardEvent('keyup', enterEventOptions));
     
     await new Promise(r => setTimeout(r, 1000));
     // Fallback: look for a button with SVG
-    if (textarea.value === text) {
+    const currentValue = textarea.value !== undefined ? textarea.value : textarea.textContent;
+    if (currentValue && currentValue.trim().length > 0 && currentValue.includes(text.substring(0, Math.min(5, text.length)))) {
       const parent = textarea.closest('div[class*="input"], div[class*="chat"]') || document.body;
-      const buttons = parent.querySelectorAll('button');
-      if (buttons.length > 0) {
-        // Assume the last button or the one without text is the send button
-        buttons[buttons.length - 1].click();
+      const buttons = parent.querySelectorAll('button:not([disabled])');
+      for (const btn of Array.from(buttons).reverse()) {
+        if (btn.querySelector('svg') || btn.textContent.includes('发送')) {
+          btn.click();
+          break;
+        }
       }
     }
 
