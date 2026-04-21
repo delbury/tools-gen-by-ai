@@ -6,7 +6,7 @@
   <title>Multi AI Agent Hub</title>
   <link rel="stylesheet" href="popup.css">
 </head>
-<body>
+<body class="no-transition">
   <div class="container">
     <header>
       <h1>Multi AI Agent Hub</h1>
@@ -61,6 +61,10 @@
 
     <div class="results-section" id="results-container">
       <!-- 结果卡片会动态插入到这里 -->
+    </div>
+
+    <div class="footer-actions">
+      <button id="reload-btn" class="text-btn" title="点击刷新整个插件（包括后台脚本）">↻ 刷新插件</button>
     </div>
   </div>
   <script src="popup.js"></script>

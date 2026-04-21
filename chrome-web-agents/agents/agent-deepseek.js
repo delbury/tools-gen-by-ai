@@ -1,10 +1,8 @@
 const DEEPSEEK_SELECTORS = {
-  textarea: '#chat-input',
+  textarea: '#chat-input, textarea, div[contenteditable="true"]',
   fileInput: 'input[type="file"]',
-  // Send button in deepseek is usually a div/button adjacent to the input.
-  // We can look for a button or just dispatch Enter. Let's try Enter first, but also provide a fallback.
   sendButton: 'div[role="button"][style*="cursor: pointer"], button',
-  messageContainer: '.ds-markdown', 
+  messageContainer: '.ds-markdown, .markdown-body, div[class*="message"]', 
   loadingClass: 'loading', // Heuristics
   // A typical way to know deepseek is generating is observing the presence of stop button 
   // or observing mutations in the latest message container until they stop for a while.
@@ -27,18 +25,8 @@ class DeepSeekAgent extends BaseAgent {
 
     // 2. 如果有图片，先上传图片
     if (imageBase64) {
-      console.log('[DeepSeek] Uploading image...');
-      // 找 file input
-      const fileInput = await this.waitForElement(DEEPSEEK_SELECTORS.fileInput, 5000)
-                              .catch(() => document.querySelector(DEEPSEEK_SELECTORS.fileInput));
-      
-      if (fileInput) {
-        await this.uploadImageToFileSelector(fileInput, imageBase64, imageName);
-        // Wait for image thumbnail to appear (heuristic delay)
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-        console.warn('[DeepSeek] File input not found, skipping image upload.');
-      }
+      console.log('[DeepSeek] DeepSeek currently does not fully support image recognition in the standard interface. Skipping image upload and sending text only.');
+      // Deepseek 暂不支持网页端的图像识别，直接忽略图片数据，仅传递并发送文本
     }
 
     // 3. 填入文本
@@ -54,28 +42,41 @@ class DeepSeekAgent extends BaseAgent {
     // 5. 提交 (DeepSeek 支持回车发送，但保险起见尝试寻找发送按钮，或者模拟回车)
     console.log('[DeepSeek] Submitting...');
     
-    // Simulate Enter key press on textarea
-    textarea.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true
-    }));
+    // Simulate Enter key presses
+    const enterEventOptions = {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true, composed: true
+    };
+    textarea.dispatchEvent(new KeyboardEvent('keydown', enterEventOptions));
+    textarea.dispatchEvent(new KeyboardEvent('keypress', enterEventOptions));
+    textarea.dispatchEvent(new KeyboardEvent('keyup', enterEventOptions));
     
     // As a fallback, if text wasn't cleared, we might need a button click
     await new Promise(r => setTimeout(r, 1000));
-    if (textarea.value === text || textarea.textContent === text) {
+    const currentValue = textarea.value !== undefined ? textarea.value : textarea.textContent;
+    if (currentValue && currentValue.trim().length > 0 && currentValue.includes(text.substring(0, Math.min(5, text.length)))) {
       console.log('[DeepSeek] Enter didn\'t clear input, trying to find send button');
-      // Look for the send button - it usually becomes solid or changes class when active
-      // Since it's hard to get a static selector, we find all clickable elements near textarea
-      const parent = textarea.parentElement.parentElement;
-      if (parent) {
-        const buttons = parent.querySelectorAll('div[role="button"], button');
-        // The last one is usually the send button
+      // Find the send button nearby. DeepSeek send button often has a specific SVG or role
+      let container = textarea;
+      let sendBtn = null;
+      for (let i = 0; i < 5; i++) {
+        if (container.parentElement) container = container.parentElement;
+        const buttons = container.querySelectorAll('div[role="button"]:not([disabled]), button:not([disabled])');
         if (buttons.length > 0) {
-          buttons[buttons.length - 1].click();
+          sendBtn = buttons[buttons.length - 1]; // Often the last button is the send button
+          break;
+        }
+      }
+      
+      if (sendBtn) {
+        console.log('[DeepSeek] Found send button via fallback:', sendBtn);
+        sendBtn.click();
+      } else {
+        // Ultimate fallback: heuristics
+        const globalBtn = document.querySelector('div[role="button"][style*="cursor: pointer"] svg, .ds-icon-button, button[type="submit"]');
+        if (globalBtn) {
+            console.log('[DeepSeek] Found global fallback button');
+            globalBtn.closest('div[role="button"], button') ? globalBtn.closest('div[role="button"], button').click() : globalBtn.click();
         }
       }
     }

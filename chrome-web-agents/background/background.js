@@ -77,23 +77,44 @@ async function handleSubmitTask(payload) {
 }
 
 async function getOrCreateAgentTab(agentId) {
-  const urlParams = new URL(AGENT_URLS[agentId]);
+  const targetUrl = AGENT_URLS[agentId];
+  const urlParams = new URL(targetUrl);
   const host = urlParams.hostname;
   
   // Find existing tab
   const tabs = await chrome.tabs.query({ url: `*://${host}/*` });
   
   if (tabs.length > 0) {
-    // Focus the existing tab
-    await chrome.tabs.update(tabs[0].id, { active: true });
-    // Also bring the window to front if we can
-    chrome.windows.update(tabs[0].windowId, { focused: true });
-    return tabs[0];
-  } else {
-    // Create new tab
-    const newTab = await chrome.tabs.create({ url: AGENT_URLS[agentId], active: true });
+    const existingTab = tabs[0];
     
-    // In MV3, we wait for complete load using onUpdated listener before sending messages
+    // Navigate strictly to the root chat URL to force a new conversation
+    // Important: DO NOT setActive or focus the window, otherwise popup closes!
+    await chrome.tabs.update(existingTab.id, { url: targetUrl, active: false });
+    
+    // Wait for the forced navigation to complete
+    return new Promise((resolve) => {
+      let timeoutId;
+      const listener = (tabId, info) => {
+        if (tabId === existingTab.id && info.status === 'complete') {
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve(existingTab);
+        }
+      };
+      
+      // Fallback in case of SPA fast navigation without triggering 'complete'
+      timeoutId = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve(existingTab);
+      }, 2500);
+
+      chrome.tabs.onUpdated.addListener(listener);
+    });
+  } else {
+    // Create new tab but do not make it active so the popup stays open
+    const newTab = await chrome.tabs.create({ url: targetUrl, active: false });
+    
+    // In MV3, we wait for complete load
     return new Promise((resolve) => {
       const listener = (tabId, info) => {
         if (tabId === newTab.id && info.status === 'complete') {

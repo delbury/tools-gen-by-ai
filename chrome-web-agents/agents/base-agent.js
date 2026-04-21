@@ -113,10 +113,15 @@ class BaseAgent {
     // 聚焦元素
     element.focus();
     
-    if (element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input') {
+    if (element.tagName.toLowerCase() === 'textarea') {
       // Chrome 原生劫持了 setter，所以需要拿到原生的 setter
       const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-      nativeInputValueSetter.call(element, text);
+      if (nativeInputValueSetter) nativeInputValueSetter.call(element, text);
+      else element.value = text;
+    } else if (element.tagName.toLowerCase() === 'input') {
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      if (nativeInputValueSetter) nativeInputValueSetter.call(element, text);
+      else element.value = text;
     } else {
       element.innerHTML = text; // 对于 contenteditable
     }
@@ -168,23 +173,47 @@ class BaseAgent {
    */
   async clickNewChat() {
     console.log(`[${this.agentId}] Attempting to start a new chat...`);
-    const newChatKeywords = ['新对话', '新建对话', 'New chat', '开启新对话'];
-    // 查找所有的 button 或看起来像 button 的元素
-    const buttons = document.querySelectorAll('button, div[role="button"], a');
+    
+    // First try the SPA way by finding the New Chat button
+    const newChatKeywords = ['新对话', '新建对话', 'New chat', '开启新对话', '新建'];
+    const buttons = document.querySelectorAll('button, div[role="button"], a, div[class*="new"], div[class*="New"]');
+    
     for (const btn of buttons) {
       const text = btn.innerText || btn.textContent || '';
       const ariaLabel = btn.getAttribute('aria-label') || '';
+      const title = btn.getAttribute('title') || '';
+      const dataTooltip = btn.getAttribute('data-tooltip') || '';
       
-      const match = newChatKeywords.some(kw => text.includes(kw) || ariaLabel.includes(kw));
-      // Ensure it's visible and clickable
-      if (match && btn.offsetHeight > 0) { 
+      const match = newChatKeywords.some(kw => 
+          text.includes(kw) || ariaLabel.includes(kw) || 
+          title.includes(kw) || dataTooltip.includes(kw)
+      );
+      
+      if (match && btn.offsetHeight > 0 && !btn.closest('nav')) { 
         console.log(`[${this.agentId}] Found New Chat button, clicking...`);
         btn.click();
-        await new Promise(r => setTimeout(r, 1500)); // wait for UI to reset/navigate
+        await new Promise(r => setTimeout(r, 1500));
         return true;
       }
     }
-    console.log(`[${this.agentId}] New Chat button not explicitly found by text.`);
+
+    // Try finding a plus SVG
+    const svgs = document.querySelectorAll('svg');
+    for (const svg of svgs) {
+      const html = svg.outerHTML.toLowerCase();
+      if ((html.includes('plus') || html.includes('new')) && svg.offsetHeight > 0) {
+         const clickableParent = svg.closest('div[role="button"], button, a');
+         // Make sure it doesn't accidentally click the "Upload Image" plus button
+         if (clickableParent && clickableParent.offsetHeight > 0 && !clickableParent.innerText.includes('上传')) {
+            console.log(`[${this.agentId}] Found possible New Chat svg, clicking parent...`);
+            clickableParent.click();
+            await new Promise(r => setTimeout(r, 1500));
+            return true;
+         }
+      }
+    }
+    
+    console.log(`[${this.agentId}] New Chat button not explicitly found in DOM.`);
     return false;
   }
 

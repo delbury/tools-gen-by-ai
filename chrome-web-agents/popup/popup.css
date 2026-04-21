@@ -170,7 +170,7 @@ textarea:focus {
   right: 0;
   bottom: 0;
   background-color: #555;
-  transition: .4s;
+  transition: .2s;
 }
 
 .slider:before {
@@ -181,7 +181,7 @@ textarea:focus {
   left: 3px;
   bottom: 3px;
   background-color: white;
-  transition: .4s;
+  transition: .2s;
 }
 
 input:checked + .slider {
@@ -198,6 +198,11 @@ input:checked + .slider:before {
 
 .slider.round:before {
   border-radius: 50%;
+}
+
+.no-transition .slider,
+.no-transition .slider:before {
+  transition: none !important;
 }
 
 .agent-name {
@@ -270,4 +275,28 @@ input:checked + .slider:before {
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.footer-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.text-btn:hover {
+  color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.05);
 }

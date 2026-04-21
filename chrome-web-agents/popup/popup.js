@@ -12,10 +12,82 @@ let selectedImageBase64 = null;
 let selectedImageName = null;
 let currentTaskId = null;
 
+const reloadBtn = document.getElementById('reload-btn');
+
 // Event Listeners
 imageUpload.addEventListener('change', handleImageUpload);
 removeImageBtn.addEventListener('click', removeImage);
 submitBtn.addEventListener('click', handleSubmit);
+
+reloadBtn.addEventListener('click', () => {
+  chrome.runtime.reload();
+});
+
+promptInput.addEventListener('input', () => {
+  chrome.storage.local.set({ inputText: promptInput.value });
+});
+
+// Restore and save agent checkbox states, text input, and image
+const agentCheckboxes = document.querySelectorAll('.agent-item input[type="checkbox"]');
+chrome.storage.local.get(['agentStates', 'inputText', 'imageBase64', 'imageName', 'currentTaskState'], (result) => {
+  let states = result.agentStates;
+  // If no saved state, use default (all checked)
+  if (!states) {
+    states = { deepseek: true, doubao: true, kimi: true };
+  }
+  
+  agentCheckboxes.forEach(cb => {
+    if (states[cb.value] !== undefined) {
+      cb.checked = states[cb.value];
+    }
+    
+    // Listen for changes and save to storage
+    cb.addEventListener('change', () => {
+      states[cb.value] = cb.checked;
+      chrome.storage.local.set({ agentStates: states });
+    });
+  });
+
+  if (result.inputText) {
+    promptInput.value = result.inputText;
+  }
+  
+  if (result.imageBase64) {
+    selectedImageBase64 = result.imageBase64;
+    selectedImageName = result.imageName;
+    imagePreview.src = selectedImageBase64;
+    imagePreviewContainer.classList.remove('hidden');
+  }
+
+  if (result.currentTaskState) {
+    currentTaskId = result.currentTaskState.taskId;
+    const statuses = result.currentTaskState.statuses;
+    for (const agentId in statuses) {
+      createResultCard(agentId);
+      const card = document.getElementById(`result-${agentId}`);
+      const state = statuses[agentId];
+      if (card) {
+        card.setAttribute('data-status', state.status);
+        const statusEl = card.querySelector('.result-status');
+        const contentEl = card.querySelector('.result-content');
+        contentEl.textContent = state.content;
+        
+        switch (state.status) {
+          case 'pending': statusEl.textContent = '准备中'; break;
+          case 'running': statusEl.textContent = '生成中...'; break;
+          case 'done': statusEl.textContent = '已完成'; break;
+          case 'error': statusEl.textContent = '失败'; break;
+        }
+      }
+    }
+    checkAllDone();
+  }
+
+  // Enable transitions after a short delay to prevent initial animation
+  setTimeout(() => {
+    document.body.classList.remove('no-transition');
+  }, 50);
+});
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -35,6 +107,10 @@ function handleImageUpload(e) {
     selectedImageBase64 = event.target.result;
     imagePreview.src = selectedImageBase64;
     imagePreviewContainer.classList.remove('hidden');
+    chrome.storage.local.set({ 
+      imageBase64: selectedImageBase64, 
+      imageName: selectedImageName 
+    });
   };
   reader.readAsDataURL(file);
 }
@@ -45,6 +121,7 @@ function removeImage() {
   imageUpload.value = '';
   imagePreview.src = '';
   imagePreviewContainer.classList.add('hidden');
+  chrome.storage.local.remove(['imageBase64', 'imageName']);
 }
 
 function getSelectedAgents() {
@@ -79,6 +156,8 @@ async function handleSubmit() {
   agents.forEach(agent => {
     createResultCard(agent);
   });
+
+  saveTaskState();
 
   submitBtn.disabled = true;
   submitBtn.textContent = '执行中...';
@@ -159,11 +238,34 @@ function updateResultCard(payload) {
       checkAllDone();
       break;
   }
+  
+  saveTaskState();
+}
+
+function saveTaskState() {
+  if (!currentTaskId) return;
+  const agentStatuses = {};
+  document.querySelectorAll('.result-card').forEach(card => {
+    const agentId = card.id.replace('result-', '');
+    const status = card.getAttribute('data-status');
+    const content = card.querySelector('.result-content').textContent;
+    agentStatuses[agentId] = { status, content };
+  });
+  
+  chrome.storage.local.set({
+    currentTaskState: {
+      taskId: currentTaskId,
+      statuses: agentStatuses
+    }
+  });
 }
 
 function checkAllDone() {
   const pendingOrRunning = document.querySelectorAll('.result-card[data-status="pending"], .result-card[data-status="running"]');
-  if (pendingOrRunning.length === 0) {
+  if (pendingOrRunning.length > 0) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '执行中...';
+  } else {
     submitBtn.disabled = false;
     submitBtn.textContent = '提交到选中 Agent';
   }
