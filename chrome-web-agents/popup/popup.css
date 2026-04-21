@@ -317,3 +317,37 @@ input:checked + .slider:before {
   color: var(--accent-color);
   background: rgba(255, 255, 255, 0.05);
 }
+
+.result-paragraph {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.result-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.result-list {
+  padding-left: 20px;
+  margin-bottom: 12px;
+  margin-top: 4px;
+}
+
+.result-list li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.result-image-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.result-image {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+

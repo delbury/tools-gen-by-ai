@@ -94,13 +94,13 @@ chrome.storage.local.get(['agentStates', 'inputText', 'imageBase64', 'imageName'
       createResultCard(agentId);
       const card = document.getElementById(`result-${agentId}`);
       const state = statuses[agentId];
-      if (card) {
-        card.setAttribute('data-status', state.status);
-        const statusEl = card.querySelector('.result-status');
-        const contentEl = card.querySelector('.result-content');
-        contentEl.textContent = state.content;
-        
-        switch (state.status) {
+        if (card) {
+          card.setAttribute('data-status', state.status);
+          const statusEl = card.querySelector('.result-status');
+          const contentEl = card.querySelector('.result-content');
+          contentEl.innerHTML = state.content;
+          
+          switch (state.status) {
           case 'pending': statusEl.textContent = '准备中'; break;
           case 'running': statusEl.textContent = '生成中...'; break;
           case 'done': statusEl.textContent = '已完成'; break;
@@ -239,7 +239,7 @@ function createResultCard(agentId) {
 }
 
 function updateResultCard(payload) {
-  const { agent, status, result, error } = payload;
+  const { agent, status, result, resultImages, error } = payload;
   const card = document.getElementById(`result-${agent}`);
   if (!card) return;
 
@@ -255,7 +255,7 @@ function updateResultCard(payload) {
       break;
     case 'done':
       statusEl.textContent = '已完成';
-      contentEl.textContent = result || '没有返回文本内容';
+      contentEl.innerHTML = formatContent(result, resultImages);
       checkAllDone();
       break;
     case 'error':
@@ -274,7 +274,7 @@ function saveTaskState() {
   document.querySelectorAll('.result-card').forEach(card => {
     const agentId = card.id.replace('result-', '');
     const status = card.getAttribute('data-status');
-    const content = card.querySelector('.result-content').textContent;
+    const content = card.querySelector('.result-content').innerHTML;
     agentStatuses[agentId] = { status, content };
   });
   
@@ -295,4 +295,57 @@ function checkAllDone() {
     submitBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
   }
+}
+
+function formatContent(text, images) {
+  if (!text && (!images || images.length === 0)) return '没有返回文本内容';
+  
+  let html = '';
+  if (text) {
+    let escaped = text.replace(/[<>&]/g, c => {
+      switch (c) { case '<': return '&lt;'; case '>': return '&gt;'; case '&': return '&amp;'; }
+    });
+    
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    const lines = escaped.split('\n');
+    let inList = false;
+    let inParagraph = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        let isListItem = /^[*-]\s/.test(line) || /^\d+\.\s/.test(line);
+        
+        if (isListItem) {
+            if (inParagraph) { html += '</p>'; inParagraph = false; }
+            if (!inList) { html += '<ul class="result-list">'; inList = true; }
+            html += '<li>' + line.replace(/^[*-]\s/, '').replace(/^\d+\.\s/, '') + '</li>';
+        } else {
+            if (inList) { html += '</ul>'; inList = false; }
+            if (line === '') {
+                if (inParagraph) { html += '</p>'; inParagraph = false; }
+            } else {
+                if (!inParagraph) { html += '<p class="result-paragraph">'; inParagraph = true; } 
+                else { html += '<br>'; }
+                html += line;
+            }
+        }
+    }
+    
+    if (inParagraph) html += '</p>';
+    if (inList) html += '</ul>';
+  }
+  
+  if (images && images.length > 0) {
+    const validImages = images.filter(src => src && !src.includes('.svg') && !src.startsWith('data:image/svg+xml'));
+    if (validImages.length > 0) {
+      html += '<div class="result-image-container">';
+      validImages.forEach(imgSrc => {
+         html += `<img class="result-image" src="${imgSrc}" />`;
+      });
+      html += '</div>';
+    }
+  }
+  
+  return html;
 }
