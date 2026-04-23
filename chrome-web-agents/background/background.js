@@ -1,7 +1,8 @@
 const AGENT_URLS = {
   deepseek: 'https://chat.deepseek.com/',
   doubao: 'https://www.doubao.com/',
-  kimi: 'https://kimi.com/'
+  kimi: 'https://kimi.com/',
+  xiaoyunque: 'https://xyq.jianying.com/'
 };
 
 // Listen for messages from popup or content scripts

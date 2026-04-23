@@ -114,7 +114,7 @@ chrome.storage.local.get(['agentStates', 'inputText', 'imageBase64', 'imageName'
   let states = result.agentStates;
   // If no saved state, use default (all checked)
   if (!states) {
-    states = { deepseek: true, doubao: true, kimi: true };
+    states = { deepseek: true, doubao: true, kimi: true, xiaoyunque: true };
   }
   
   agentCheckboxes.forEach(cb => {
@@ -286,7 +286,8 @@ async function handleSubmit() {
 const AgentNames = {
   deepseek: 'DeepSeek',
   doubao: '豆包',
-  kimi: 'Kimi'
+  kimi: 'Kimi',
+  xiaoyunque: '小云雀'
 };
 
 function createResultCard(agentId) {

@@ -15,7 +15,8 @@
     "https://kimi.moonshot.cn/*",
     "https://kimi.com/*",
     "https://*.kimi.com/*",
-    "https://kimi.ai/*"
+    "https://kimi.ai/*",
+    "https://xyq.jianying.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html"
@@ -43,6 +44,11 @@
         "https://kimi.ai/*"
       ],
       "js": ["agents/base-agent.js", "agents/agent-kimi.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://xyq.jianying.com/*"],
+      "js": ["agents/base-agent.js", "agents/agent-xiaoyunque.js"],
       "run_at": "document_idle"
     }
   ]
