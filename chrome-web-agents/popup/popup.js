@@ -15,6 +15,7 @@ let currentTaskId = null;
 
 const reloadBtn = document.getElementById('reload-btn');
 const clearHistoryBtn = document.getElementById('clear-history-btn');
+const copyAllBtn = document.getElementById('copy-all-btn');
 
 // Event Listeners
 imageUpload.addEventListener('change', handleImageUpload);
@@ -31,6 +32,35 @@ clearHistoryBtn.addEventListener('click', () => {
 
 reloadBtn.addEventListener('click', () => {
   chrome.runtime.reload();
+});
+
+copyAllBtn.addEventListener('click', () => {
+  const cards = document.querySelectorAll('.result-card');
+  let allText = '';
+  cards.forEach((card) => {
+    const rawText = card.dataset.rawResult;
+    if (rawText && rawText.trim() !== '') {
+       if (allText !== '') {
+           allText += '\n\n------------------------\n\n';
+       }
+       allText += rawText.trim();
+    }
+  });
+  
+  if (allText) {
+    navigator.clipboard.writeText(allText).then(() => {
+      const originalText = copyAllBtn.textContent;
+      copyAllBtn.textContent = '已复制所有!';
+      copyAllBtn.classList.add('success');
+      setTimeout(() => {
+        copyAllBtn.textContent = originalText;
+        copyAllBtn.classList.remove('success');
+      }, 2000);
+    }).catch(err => {
+      console.error('Copy all failed:', err);
+      alert('复制失败');
+    });
+  }
 });
 
 stopBtn.addEventListener('click', handleStop);
@@ -346,6 +376,15 @@ function checkAllDone() {
   } else {
     submitBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
+  }
+
+  const hasResults = Array.from(document.querySelectorAll('.result-card')).some(card => {
+    return card.dataset.rawResult && card.dataset.rawResult.trim() !== '';
+  });
+  if (hasResults && copyAllBtn) {
+    copyAllBtn.classList.remove('hidden');
+  } else if (copyAllBtn) {
+    copyAllBtn.classList.add('hidden');
   }
 }
 
