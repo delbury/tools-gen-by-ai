@@ -35,6 +35,29 @@ reloadBtn.addEventListener('click', () => {
 
 stopBtn.addEventListener('click', handleStop);
 
+resultsContainer.addEventListener('click', (e) => {
+  if (e.target.classList.contains('copy-btn')) {
+    const card = e.target.closest('.result-card');
+    if (card) {
+      const rawText = card.dataset.rawResult;
+      if (rawText) {
+        navigator.clipboard.writeText(rawText).then(() => {
+          const originalText = e.target.textContent;
+          e.target.textContent = '已复制!';
+          e.target.classList.add('success');
+          setTimeout(() => {
+            e.target.textContent = originalText;
+            e.target.classList.remove('success');
+          }, 2000);
+        }).catch(err => {
+          console.error('Copy failed:', err);
+          alert('复制失败');
+        });
+      }
+    }
+  }
+});
+
 function handleStop() {
   if (!currentTaskId) return;
   chrome.runtime.sendMessage({
@@ -96,15 +119,30 @@ chrome.storage.local.get(['agentStates', 'inputText', 'imageBase64', 'imageName'
       const state = statuses[agentId];
         if (card) {
           card.setAttribute('data-status', state.status);
+          if (state.rawResult !== undefined) {
+            card.dataset.rawResult = state.rawResult;
+          }
           const statusEl = card.querySelector('.result-status');
           const contentEl = card.querySelector('.result-content');
+          const copyBtn = card.querySelector('.copy-btn');
+          
           contentEl.innerHTML = state.content;
           
           switch (state.status) {
           case 'pending': statusEl.textContent = '准备中'; break;
           case 'running': statusEl.textContent = '生成中...'; break;
-          case 'done': statusEl.textContent = '已完成'; break;
-          case 'error': statusEl.textContent = '失败'; break;
+          case 'done': 
+            statusEl.textContent = '已完成'; 
+            if (state.rawResult && state.rawResult.trim() !== '') {
+              copyBtn.classList.remove('hidden');
+            }
+            break;
+          case 'error': 
+            statusEl.textContent = '失败';
+            if (state.rawResult && state.rawResult.trim() !== '') {
+              copyBtn.classList.remove('hidden');
+            }
+            break;
         }
       }
     }
@@ -230,7 +268,10 @@ function createResultCard(agentId) {
   card.innerHTML = `
     <div class="result-header">
       <span class="result-agent-name">${AgentNames[agentId] || agentId}</span>
-      <span class="result-status">准备中</span>
+      <div class="result-header-actions">
+        <button class="copy-btn hidden" title="复制返回文本">📋 复制</button>
+        <span class="result-status">准备中</span>
+      </div>
     </div>
     <div class="result-content">等待建立连接...</div>
   `;
@@ -244,9 +285,19 @@ function updateResultCard(payload) {
   if (!card) return;
 
   card.setAttribute('data-status', status);
+  if (result !== undefined) {
+    card.dataset.rawResult = result;
+  }
   
   const statusEl = card.querySelector('.result-status');
   const contentEl = card.querySelector('.result-content');
+  const copyBtn = card.querySelector('.copy-btn');
+
+  if ((status === 'done' || status === 'error') && result && result.trim() !== '') {
+    copyBtn.classList.remove('hidden');
+  } else {
+    copyBtn.classList.add('hidden');
+  }
 
   switch (status) {
     case 'running':
@@ -275,7 +326,8 @@ function saveTaskState() {
     const agentId = card.id.replace('result-', '');
     const status = card.getAttribute('data-status');
     const content = card.querySelector('.result-content').innerHTML;
-    agentStatuses[agentId] = { status, content };
+    const rawResult = card.dataset.rawResult || '';
+    agentStatuses[agentId] = { status, content, rawResult };
   });
   
   chrome.storage.local.set({

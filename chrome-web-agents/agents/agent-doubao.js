@@ -166,10 +166,10 @@ class DoubaoAgent extends BaseAgent {
               if (timeoutId) clearTimeout(timeoutId);
               console.log('[Doubao] Generation complete');
               
-              const images = Array.from(lastMessage.querySelectorAll('img')).map(img => img.src);
+              const finalText = this.extractStructuredContent(lastMessage);
               resolve({
-                text: currentText,
-                images: images
+                text: finalText,
+                images: []
               });
             }
           }

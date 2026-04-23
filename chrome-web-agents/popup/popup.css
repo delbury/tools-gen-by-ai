@@ -274,6 +274,36 @@ input:checked + .slider:before {
   margin-bottom: 8px;
 }
 
+.result-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.copy-btn.success {
+  background: var(--success-color);
+  color: white;
+}
+
 .result-agent-name {
   font-weight: 600;
   font-size: 0.9rem;

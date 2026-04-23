@@ -107,12 +107,12 @@ class DeepSeekAgent extends BaseAgent {
             
             console.log('[DeepSeek] Generation complete');
             
-            // Extract images if any were generated (rare for deepseek text chat, but possible)
-            const images = Array.from(lastMessage.querySelectorAll('img')).map(img => img.src);
+            // Extract images and text preserving order
+            const finalText = this.extractStructuredContent(lastMessage);
             
             resolve({
-              text: lastMessage.innerText || lastMessage.textContent,
-              images: images
+              text: finalText,
+              images: []
             });
           }
         }

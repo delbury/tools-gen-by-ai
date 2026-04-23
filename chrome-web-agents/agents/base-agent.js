@@ -191,6 +191,9 @@ class BaseAgent {
       
       if (match && btn.offsetHeight > 0 && !btn.closest('nav')) { 
         console.log(`[${this.agentId}] Found New Chat button, clicking...`);
+        if (btn.hasAttribute('target')) {
+          btn.removeAttribute('target');
+        }
         btn.click();
         await new Promise(r => setTimeout(r, 1500));
         return true;
@@ -206,6 +209,9 @@ class BaseAgent {
          // Make sure it doesn't accidentally click the "Upload Image" plus button
          if (clickableParent && clickableParent.offsetHeight > 0 && !clickableParent.innerText.includes('上传')) {
             console.log(`[${this.agentId}] Found possible New Chat svg, clicking parent...`);
+            if (clickableParent.hasAttribute('target')) {
+               clickableParent.removeAttribute('target');
+            }
             clickableParent.click();
             await new Promise(r => setTimeout(r, 1500));
             return true;
@@ -218,6 +224,56 @@ class BaseAgent {
   }
 
   // --- Abstract Methods to implement in subclasses ---
+
+  /**
+   * 递归解析 DOM 节点，以 Markdown 的形式提取文本和图片，保留它们原本的相对顺序
+   */
+  extractStructuredContent(element) {
+    let result = '';
+    const isBlock = tag => ['p', 'div', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'article', 'section', 'table', 'tr'].includes(tag);
+    
+    function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        result += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === 'svg' || tag === 'script' || tag === 'style') return;
+        
+        try {
+          const style = window.getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden') return;
+        } catch(e) {}
+        
+        if (tag === 'img') {
+          const src = node.src;
+          if (src && !src.includes('.svg') && !src.startsWith('data:image/svg+xml')) {
+             result += `\n\n[IMG:${src}]\n\n`;
+          }
+          return;
+        }
+
+        if (tag === 'li') {
+          if (!result.endsWith('\n')) result += '\n';
+          result += '- ';
+        } else if (tag === 'br') {
+          result += '\n';
+        } else if (isBlock(tag) && tag !== 'li') {
+          if (!result.endsWith('\n\n')) result += '\n\n';
+        }
+
+        for (const child of node.childNodes) {
+          walk(child);
+        }
+
+        if (isBlock(tag) && tag !== 'li') {
+          if (!result.endsWith('\n\n')) result += '\n\n';
+        }
+      }
+    }
+    
+    walk(element);
+    return result.replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   /**
    * 执行完整的业务逻辑，子类必须实现

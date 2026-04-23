@@ -1,7 +1,7 @@
 const AGENT_URLS = {
   deepseek: 'https://chat.deepseek.com/',
   doubao: 'https://www.doubao.com/',
-  kimi: 'https://kimi.moonshot.cn/'
+  kimi: 'https://kimi.com/'
 };
 
 // Listen for messages from popup or content scripts
@@ -43,16 +43,9 @@ async function handleSubmitTask(payload) {
             imageName
           }
         }).catch(err => {
-          if (retryCount === 0) {
-            console.warn(`[${agentId}] Send message failed, attempting to reload tab and retry...`, err);
-            chrome.tabs.reload(tab.id);
-            const listener = (tabId, info) => {
-              if (tabId === tab.id && info.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                setTimeout(() => trySendMessage(1), 1500); // wait a bit more after reload
-              }
-            };
-            chrome.tabs.onUpdated.addListener(listener);
+          if (retryCount < 5) {
+            console.warn(`[${agentId}] Send message failed, retrying (${retryCount + 1}/5)...`, err);
+            setTimeout(() => trySendMessage(retryCount + 1), 1000); // just wait and retry
           } else {
             console.error(`Error sending EXECUTE to ${agentId}:`, err);
             // Report error back to popup
@@ -86,15 +79,41 @@ async function getOrCreateAgentTab(agentId) {
   const urlParams = new URL(targetUrl);
   const host = urlParams.hostname;
   
+  // Match both exact host and subdomains, plus kimi.com if it's kimi
+  let matchPatterns;
+  if (agentId === 'kimi') {
+    matchPatterns = [
+      `*://${host}/*`, 
+      `*://*.moonshot.cn/*`,
+      `*://kimi.com/*`,
+      `*://*.kimi.com/*`,
+      `*://kimi.ai/*`,
+      `*://*.kimi.ai/*`
+    ];
+  } else {
+    // For doubao and deepseek, we might also want to catch subdomains just in case
+    const hostParts = host.split('.');
+    const baseDomain = hostParts.length >= 2 ? hostParts.slice(-2).join('.') : host;
+    matchPatterns = [`*://${host}/*`, `*://*.${baseDomain}/*`];
+  }
+  
   // Find existing tab
-  const tabs = await chrome.tabs.query({ url: `*://${host}/*` });
+  const tabs = await chrome.tabs.query({ url: matchPatterns });
   
   if (tabs.length > 0) {
     const existingTab = tabs[0];
     
     // Navigate strictly to the root chat URL to force a new conversation
     // Important: DO NOT setActive or focus the window, otherwise popup closes!
-    await chrome.tabs.update(existingTab.id, { url: targetUrl, active: false });
+    try {
+      const updateProps = { active: false };
+      if (existingTab.url !== targetUrl) {
+        updateProps.url = targetUrl;
+      }
+      await chrome.tabs.update(existingTab.id, updateProps);
+    } catch(e) {
+      console.error(e);
+    }
     
     // Wait for the forced navigation to complete
     return new Promise((resolve) => {
