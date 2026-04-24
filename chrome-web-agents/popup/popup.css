@@ -325,11 +325,18 @@ input:checked + .slider:before {
 }
 
 .footer-actions {
+  position: sticky;
+  bottom: 0;
+  background-color: var(--bg-color);
+  z-index: 10;
   margin-top: 24px;
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-bottom: -16px;
+  padding: 16px;
   display: flex;
   justify-content: center;
   border-top: 1px solid var(--border-color);
-  padding-top: 16px;
 }
 
 .text-btn {

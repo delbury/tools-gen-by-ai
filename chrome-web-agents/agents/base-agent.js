@@ -10,7 +10,13 @@ class BaseAgent {
 
   setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === 'ABORT_TASK' && message.payload.agentId === this.agentId) {
+        this.aborted = true;
+        sendResponse({ received: true });
+        return true;
+      }
       if (message.type === 'EXECUTE_AGENT' && message.payload.agentId === this.agentId) {
+        this.aborted = false;
         this.taskId = message.payload.taskId;
         const { text, imageBase64, imageName } = message.payload;
         
@@ -20,9 +26,11 @@ class BaseAgent {
         // Execute the flow
         this.runFlow(text, imageBase64, imageName)
           .then(result => {
-             this.reportStatus('done', result.text, result.images);
+             if (this.aborted) return;
+             this.reportStatus('done', result ? result.text : null, result ? result.images : null);
           })
           .catch(err => {
+             if (this.aborted) return;
              console.error(`[${this.agentId}] Flow error:`, err);
              this.reportStatus('error', null, null, err.toString());
           });
@@ -35,6 +43,7 @@ class BaseAgent {
 
   reportStatus(status, text = null, images = null, error = null) {
     if (!this.taskId) return;
+    if (this.aborted) return;
     
     chrome.runtime.sendMessage({
       type: 'AGENT_STATUS',

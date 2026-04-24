@@ -2,7 +2,9 @@ const XIAOYUNQUE_SELECTORS = {
   // TipTap ProseMirror 编辑器
   editor: 'div.tiptap.ProseMirror[contenteditable="true"], div.ProseMirror[contenteditable="true"], div[contenteditable="true"]',
   // 图片/视频文件上传
-  fileInput: 'input[type="file"][accept*=".png"]',
+  // 实际 DOM: <input type="file" multiple accept=".png,.jpg,.jpeg,.mp4,.mov,.webp">
+  // 用 [multiple] 区分图片上传 input 与 JSON 导入 input（后者无 multiple）
+  fileInput: 'input[type="file"][multiple], input[type="file"][accept*=".png"]',
   // 新对话按钮 (侧边栏)
   newChatBtn: 'button.newChatBtn-OHMqsd',
   // 提交按钮 (带箭头图标)
@@ -39,6 +41,20 @@ class XiaoyunqueAgent extends BaseAgent {
 
     if (newChatBtn) {
       console.log('[Xiaoyunque] Found New Chat button, clicking...');
+      
+      // Prevent opening in a new tab if it's a link or contains a link
+      if (newChatBtn.tagName.toLowerCase() === 'a' && newChatBtn.hasAttribute('target')) {
+        newChatBtn.removeAttribute('target');
+      }
+      const parentA = newChatBtn.closest('a');
+      if (parentA && parentA.hasAttribute('target')) {
+        parentA.removeAttribute('target');
+      }
+      const childA = newChatBtn.querySelector('a[target]');
+      if (childA) {
+        childA.removeAttribute('target');
+      }
+
       newChatBtn.click();
       await new Promise(r => setTimeout(r, 1500));
       return true;
@@ -137,6 +153,27 @@ class XiaoyunqueAgent extends BaseAgent {
   }
 
   /**
+   * 覆写 base-agent 的 uploadImageToFileSelector：
+   * 小云雀同时监听了 change 和 input 事件，base-agent 两者都派发会导致同一张图片上传两次。
+   * 此处只派发 change 事件，保证上传仅触发一次。
+   */
+  async uploadImageToFileSelector(fileInput, imageBase64, filename) {
+    if (!imageBase64) return;
+
+    const file = this.base64ToFile(imageBase64, filename || 'upload.png');
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    fileInput.files = dataTransfer.files;
+
+    // 只派发 change，不派发 input，防止双次上传。
+    // 必须保持 bubbles: true：React/Vue 使用事件委托，监听器挂在父容器，
+    // bubbles: false 会导致父级收不到事件，图片完全无法上传。
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  /**
    * 通过 ClipboardEvent 粘贴图片
    */
   async pasteImage(editor, imageBase64, filename) {
@@ -160,6 +197,89 @@ class XiaoyunqueAgent extends BaseAgent {
   }
 
   /**
+   * 等待图片上传 loading 完成
+   * 轮询策略：
+   *   1. 先等上传预览区出现（说明组件已受理文件）
+   *   2. 再等 loading 指示器消失 且 预览缩略图稳定存在
+   *   3. 无论如何至少等待 minWait 毫秒
+   * @param {number} timeout - 超时毫秒数，默认 15000
+   */
+  async waitForImageUploadComplete(timeout = 15000) {
+    const startTime = Date.now();
+    const minWait = 5000; // 最低等待时间，保证上传有充足时间
+
+    // 判断"上传中"的 loading 指示器是否存在
+    const hasLoading = () => !!document.querySelector(
+      '[class*="uploading"], [class*="Uploading"], ' +
+      '[class*="lv-upload-list-item-uploading"], ' +
+      '[class*="upload-loading"], [class*="uploadLoading"], ' +
+      '[class*="progress"], [class*="Progress"]'
+    );
+
+    // 判断"上传完成"的预览缩略图是否存在
+    const hasPreview = () => !!document.querySelector(
+      '[class*="lv-upload-list-item"]:not([class*="uploading"]), ' +
+      '[class*="uploadItem"]:not([class*="loading"]):not([class*="uploading"]), ' +
+      '[class*="filePreview"], [class*="file-preview"], ' +
+      '[class*="imagePreview"], [class*="image-preview"], ' +
+      '[class*="attachmentThumb"], [class*="attachment-thumb"]'
+    );
+
+    return new Promise(resolve => {
+      let loadingEverAppeared = false;
+      let resolved = false;
+
+      const doResolve = () => {
+        if (resolved) return;
+        resolved = true;
+        clearInterval(timer);
+        resolve();
+      };
+
+      const timer = setInterval(() => {
+        if (this.aborted) {
+          return doResolve();
+        }
+
+        const loading = hasLoading();
+        const preview = hasPreview();
+
+        if (loading) {
+          loadingEverAppeared = true;
+          console.log('[Xiaoyunque] Image uploading in progress...');
+          return; // 继续等待
+        }
+
+        // loading 消失后：若预览存在 或 曾出现过 loading 则认为上传完成
+        // 但至少要等满 minWait 毫秒
+        if (!loading && (preview || loadingEverAppeared)) {
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= minWait) {
+            console.log('[Xiaoyunque] Image upload complete (preview ready)');
+            return doResolve();
+          }
+          // 还没到最低等待时间，继续轮询
+        }
+
+        // 超时兜底
+        if (Date.now() - startTime >= timeout) {
+          console.warn('[Xiaoyunque] Image upload wait timed out, continuing anyway...');
+          doResolve();
+        }
+      }, 500);
+
+      // 至少等待 minWait 毫秒后再 resolve（无论 loading 是否出现）
+      setTimeout(() => {
+        if (!loadingEverAppeared) {
+          console.log('[Xiaoyunque] No loading indicator detected after minWait, continuing...');
+        }
+        doResolve();
+      }, minWait);
+    });
+  }
+
+
+  /**
    * 获取 bot 回复消息列表
    */
   getBotMessages() {
@@ -180,9 +300,11 @@ class XiaoyunqueAgent extends BaseAgent {
 
     // 1. 强制每次新开对话
     await this.clickNewChat();
+    if (this.aborted) return;
 
     // 2. 等待 ProseMirror 编辑器加载
     const editors = await this.waitForElements(XIAOYUNQUE_SELECTORS.editor, 15000);
+    if (this.aborted) return;
     // TipTap ProseMirror 编辑器通常是第一个或唯一的 contenteditable div
     const editor = Array.from(editors).find(el =>
       el.classList.contains('ProseMirror') || el.classList.contains('tiptap')
@@ -196,20 +318,32 @@ class XiaoyunqueAgent extends BaseAgent {
     // 3. 如果有图片，先上传图片
     if (imageBase64) {
       console.log('[Xiaoyunque] Uploading image...');
-      
-      // 优先找隐藏的 file input
-      const fileInputs = Array.from(document.querySelectorAll(XIAOYUNQUE_SELECTORS.fileInput));
-      const fileInput = fileInputs.find(i => !i.disabled) || fileInputs[0];
+      let uploaded = false;
+
+      // 策略 1: 直接对 file input 赋值（DataTransfer 对 display:none 的元素同样有效）
+      // 不点击触发按钮/菜单，避免触发两次 change 事件导致图片重复提交
+      // 用 [multiple] 匹配图片上传 input（JSON 导入 input 无 multiple 属性）
+      const fileInput = document.querySelector('input[type="file"][multiple]')
+        || document.querySelector('input[type="file"][accept*=".png"]');
 
       if (fileInput) {
+        console.log('[Xiaoyunque] Uploading via file input (direct DataTransfer)...');
         await this.uploadImageToFileSelector(fileInput, imageBase64, imageName);
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-        // 通过粘贴方式上传
+
+        // 等待上传 loading 完成：轮询直到预览缩略图出现，或超时 15s
+        console.log('[Xiaoyunque] Waiting for image upload to complete...');
+        await this.waitForImageUploadComplete(15000);
+        uploaded = true;
+      }
+
+      // 策略 2: 兜底 — 通过粘贴方式上传
+      if (!uploaded) {
+        console.log('[Xiaoyunque] Falling back to paste image...');
         await this.pasteImage(editor, imageBase64, imageName);
         await new Promise(r => setTimeout(r, 2500));
       }
     }
+    if (this.aborted) return;
 
     // 4. 输入文本
     if (text) {
@@ -217,6 +351,7 @@ class XiaoyunqueAgent extends BaseAgent {
       await this.inputTextToProseMirror(editor, text);
       await new Promise(r => setTimeout(r, 800));
     }
+    if (this.aborted) return;
 
     // 5. 获取提交前的消息数量
     const initialMsgs = this.getBotMessages();
@@ -228,42 +363,36 @@ class XiaoyunqueAgent extends BaseAgent {
     // 6. 提交
     console.log('[Xiaoyunque] Submitting...');
 
-    // 先尝试 Enter 键
-    const enterEventOptions = {
-      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-      bubbles: true, cancelable: true, composed: true
-    };
-    editor.dispatchEvent(new KeyboardEvent('keydown', enterEventOptions));
-    editor.dispatchEvent(new KeyboardEvent('keypress', enterEventOptions));
-    editor.dispatchEvent(new KeyboardEvent('keyup', enterEventOptions));
+    // 等待提交按钮变为可点击状态（图片上传完成后按钮才会激活）
+    const readyBtn = await this.waitForSubmitButtonEnabled(15000);
+    if (this.aborted) return;
 
-    await new Promise(r => setTimeout(r, 1000));
+    if (readyBtn) {
+      // 直接点击已就绪的提交按钮
+      readyBtn.click();
+      console.log('[Xiaoyunque] Clicked submit button (after waiting for enabled)');
+    } else {
+      // 兜底：尝试 Enter 键
+      console.log('[Xiaoyunque] Submit button not found/enabled, trying Enter key...');
+      const enterEventOptions = {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+        bubbles: true, cancelable: true, composed: true
+      };
+      editor.dispatchEvent(new KeyboardEvent('keydown', enterEventOptions));
+      editor.dispatchEvent(new KeyboardEvent('keypress', enterEventOptions));
+      editor.dispatchEvent(new KeyboardEvent('keyup', enterEventOptions));
 
-    // 如果编辑器中文本还在，尝试点击提交按钮
-    const currentEditorText = (editor.textContent || '').trim();
-    if (currentEditorText.length > 0 && text && currentEditorText.includes(text.substring(0, Math.min(5, text.length)))) {
-      console.log('[Xiaoyunque] Enter didn\'t submit, trying submit button...');
-      
-      // 先尝试带特定 class 的按钮
-      let submitBtn = document.querySelector(XIAOYUNQUE_SELECTORS.submitBtn);
-      
-      // 如果有 disabled 属性，可能需要等待按钮激活
-      if (submitBtn && submitBtn.disabled) {
-        console.log('[Xiaoyunque] Submit button is disabled, waiting...');
-        await new Promise(r => setTimeout(r, 1000));
-        submitBtn = document.querySelector(XIAOYUNQUE_SELECTORS.submitBtn);
-      }
-      
-      if (submitBtn && !submitBtn.disabled) {
-        submitBtn.click();
-        console.log('[Xiaoyunque] Clicked submit button');
-      } else {
-        // 兜底: 找 toolbar 区域中的发送按钮 (带有箭头 SVG 的按钮)
+      await new Promise(r => setTimeout(r, 1000));
+      if (this.aborted) return;
+
+      // Enter 仍未提交，再找 toolbar 中的 fallback 按钮
+      const currentEditorText = (editor.textContent || '').trim();
+      if (currentEditorText.length > 0 && text && currentEditorText.includes(text.substring(0, Math.min(5, text.length)))) {
+        console.log('[Xiaoyunque] Enter didn\'t submit, trying fallback toolbar button...');
         const toolbarBtns = document.querySelectorAll('[class*="toolbar"] button, [class*="buttonContainer"] button');
         for (const btn of Array.from(toolbarBtns).reverse()) {
           if (btn.querySelector('svg') && !btn.disabled) {
             const btnText = (btn.innerText || btn.textContent || '').trim();
-            // 排除明显不是发送按钮的
             if (!btnText.includes('刷新') && !btnText.includes('优化') && !btnText.includes('上传')) {
               btn.click();
               console.log('[Xiaoyunque] Clicked fallback button');
@@ -279,6 +408,72 @@ class XiaoyunqueAgent extends BaseAgent {
     return await this.waitForResponse(initialMessages, initialLastText);
   }
 
+  /**
+   * 轮询等待提交按钮变为可点击状态（非 disabled、非 aria-disabled）
+   * 图片上传期间按钮通常处于 disabled 状态，上传完成后才激活
+   * @param {number} timeout - 超时毫秒数，默认 15000
+   * @returns {HTMLElement|null} 可点击的提交按钮，超时则返回 null
+   */
+  async waitForSubmitButtonEnabled(timeout = 15000) {
+    const startTime = Date.now();
+    console.log('[Xiaoyunque] Waiting for submit button to become enabled...');
+
+    // lv-btn 禁用时会设置 HTML disabled 属性 或 追加 lv-btn-disabled class
+    const isBtnDisabled = (btn) =>
+      btn.disabled ||
+      btn.classList.contains('lv-btn-disabled') ||
+      btn.getAttribute('aria-disabled') === 'true';
+
+    const findEnabledBtn = () => {
+      // 优先精确匹配 createButton class（同时兜底模糊匹配）
+      const btn = document.querySelector(XIAOYUNQUE_SELECTORS.submitBtn)
+        || document.querySelector('button[class*="createButton"]');
+      if (btn && !isBtnDisabled(btn)) {
+        return btn;
+      }
+      // 兜底：在 buttonContainer 中找带 SVG 且未禁用的按钮
+      // 排除"一键优化"按钮（aria-label 含"优化"）及上传/刷新按钮
+      const containerBtns = document.querySelectorAll('[class*="buttonContainer"] button');
+      for (const b of Array.from(containerBtns).reverse()) {
+        if (b.querySelector('svg') && !isBtnDisabled(b)) {
+          const label = (b.getAttribute('aria-label') || '').trim();
+          const text  = (b.innerText || b.textContent || '').trim();
+          if (!label.includes('优化') && !text.includes('刷新') && !text.includes('优化') && !text.includes('上传')) {
+            return b;
+          }
+        }
+      }
+      return null;
+    };
+
+    return new Promise(resolve => {
+      // 立即检查一次
+      const immediate = findEnabledBtn();
+      if (immediate) {
+        console.log('[Xiaoyunque] Submit button already enabled');
+        return resolve(immediate);
+      }
+
+      const timer = setInterval(() => {
+        if (this.aborted) {
+          clearInterval(timer);
+          return resolve(null);
+        }
+        const btn = findEnabledBtn();
+        if (btn) {
+          clearInterval(timer);
+          console.log(`[Xiaoyunque] Submit button enabled after ${Date.now() - startTime}ms`);
+          return resolve(btn);
+        }
+        if (Date.now() - startTime >= timeout) {
+          clearInterval(timer);
+          console.warn('[Xiaoyunque] Timed out waiting for submit button to be enabled');
+          resolve(null);
+        }
+      }, 300);
+    });
+  }
+
   async waitForElements(selector, timeout) {
     const startTime = Date.now();
     return new Promise((resolve, reject) => {
@@ -286,6 +481,10 @@ class XiaoyunqueAgent extends BaseAgent {
       if (elements.length > 0) return resolve(elements);
 
       const interval = setInterval(() => {
+        if (this.aborted) {
+          clearInterval(interval);
+          return reject('Aborted by user');
+        }
         elements = document.querySelectorAll(selector);
         if (elements.length > 0) {
           clearInterval(interval);
@@ -306,6 +505,11 @@ class XiaoyunqueAgent extends BaseAgent {
       let generationStarted = false;
 
       const checkInterval = setInterval(() => {
+        if (this.aborted) {
+          clearInterval(checkInterval);
+          if (timeoutId) clearTimeout(timeoutId);
+          return reject('Aborted by user');
+        }
         const messages = this.getBotMessages();
         if (messages.length === 0) return;
 

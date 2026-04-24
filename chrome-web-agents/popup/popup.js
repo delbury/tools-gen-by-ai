@@ -254,8 +254,6 @@ async function handleSubmit() {
   });
 
   saveTaskState();
-
-  saveTaskState();
   checkAllDone();
 
   const payload = {
@@ -314,6 +312,9 @@ function updateResultCard(payload) {
   const { agent, status, result, resultImages, error } = payload;
   const card = document.getElementById(`result-${agent}`);
   if (!card) return;
+
+  // 如果任务已由用户手动终止，不再接收后续的状态更新
+  if (card.querySelector('.result-status').textContent === '已终止') return;
 
   card.setAttribute('data-status', status);
   if (result !== undefined) {

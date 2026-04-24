@@ -102,7 +102,8 @@ async function getOrCreateAgentTab(agentId) {
   const tabs = await chrome.tabs.query({ url: matchPatterns });
   
   if (tabs.length > 0) {
-    const existingTab = tabs[0];
+    // Prioritize the tab that exactly matches the host
+    let existingTab = tabs.find(t => t.url && new URL(t.url).hostname === host) || tabs[0];
     
     // Navigate strictly to the root chat URL to force a new conversation
     // Important: DO NOT setActive or focus the window, otherwise popup closes!
@@ -168,13 +169,6 @@ function sendTaskUpdate(payload) {
 }
 
 function handleCancelTask(payload) {
-  // simplest & cleanest way to fully abort any active execution inside content scripts
-  // is to force-reload the chat tab.
-  for (const agentId of Object.keys(AGENT_URLS)) {
-    const targetUrl = AGENT_URLS[agentId];
-    const urlParams = new URL(targetUrl);
-    chrome.tabs.query({ url: `*://${urlParams.hostname}/*` }, (tabs) => {
-      tabs.forEach(tab => chrome.tabs.reload(tab.id));
-    });
-  }
+  // 用户要求：停止执行后，不对页面进行任何操作（不刷新页面，也不终止脚本），
+  // 只在 popup 端停止状态跟踪。所以这里什么都不做。
 }
