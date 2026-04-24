@@ -9,8 +9,19 @@ const XIAOYUNQUE_SELECTORS = {
   newChatBtn: 'button.newChatBtn-OHMqsd',
   // 提交按钮 (带箭头图标)
   submitBtn: 'button.createButton-z2MuSL',
-  // 响应区域 — 通用选择器，需要实测后微调
-  messageContainer: '[class*="messageContent"], [class*="message-content"], [class*="chatMessage"], [class*="assistantMessage"], [class*="bot"], [class*="response"], [class*="result"]',
+  // 助手消息外层容器
+  // 实际 DOM: <div class="assistantMessage-xtewpm ag-ui-assistant-message">
+  messageContainer: '[class*="assistantMessage"], [class*="assistant-message"]',
+  // 消息内容区（markdown 文本所在子容器，排除时间戳等干扰元素）
+  // 实际 DOM: <div class="markdownContent-o0w7gu">
+  markdownContent: '[class*="markdownContent"], [class*="markdown-content"], [class*="messageContent"], [class*="message-content"]',
+  // 需要从消息中过滤掉的无关区域（工具调用、时间戳等）
+  // 实际 DOM: <div class="toolCallGroup-jJqCQI">、<div class="messageMeta-lLdj3s">
+  noiseSelectors: [
+    '[class*="toolCallGroup"], [class*="tool-call-group"]',
+    '[class*="messageMeta"], [class*="message-meta"]',
+    '[class*="toolCall"], [class*="tool-call"]:not([class*="group"])',
+  ],
 };
 
 class XiaoyunqueAgent extends BaseAgent {
@@ -285,14 +296,56 @@ class XiaoyunqueAgent extends BaseAgent {
   getBotMessages() {
     const allMessages = document.querySelectorAll(XIAOYUNQUE_SELECTORS.messageContainer);
     return Array.from(allMessages).filter(el => {
-      // 排除用户消息
-      if (el.closest('[class*="user"], [class*="User"], [class*="human"], [class*="Human"]')) return false;
       // 排除输入框区域
       if (el.closest('[class*="promptContainer"], [class*="inputSection"], [class*="inputContainer"], div[contenteditable="true"]')) return false;
       // 排除推荐提示词区域
       if (el.closest('[class*="sugPrompt"], [class*="toolbar"]')) return false;
       return true;
     });
+  }
+
+  /**
+   * 从消息元素提取纯净文本：
+   * 克隆节点后移除工具调用、时间戳等无关区域，
+   * 优先只读取 markdownContent 子节点（含 plainContent 开头句），
+   * 若无 markdownContent 则读取整个清理后的克隆节点。
+   * @param {Element} messageEl - assistantMessage 外层容器
+   * @returns {string} 过滤后的纯净文本
+   */
+  extractMessageText(messageEl) {
+    // 克隆节点，避免修改真实 DOM
+    const clone = messageEl.cloneNode(true);
+
+    // 移除所有无关区域
+    for (const sel of XIAOYUNQUE_SELECTORS.noiseSelectors) {
+      clone.querySelectorAll(sel).forEach(el => el.remove());
+    }
+
+    // 优先只取 markdownContent 部分（主体回复），同时拼接 plainContent 开头句
+    const plainContent = clone.querySelector('[class*="plainContent"], [class*="plain-content"]');
+    const markdownContent = clone.querySelector(XIAOYUNQUE_SELECTORS.markdownContent);
+
+    if (markdownContent) {
+      const parts = [];
+      if (plainContent) {
+        const plainText = (plainContent.innerText || plainContent.textContent || '').trim();
+        if (plainText) parts.push(plainText);
+      }
+      parts.push(this.extractStructuredContent(markdownContent));
+      return parts.filter(Boolean).join('\n\n');
+    }
+
+    // 无 markdownContent 时返回整个已清理节点的文本
+    return this.extractStructuredContent(clone);
+  }
+
+  /**
+   * 获取消息元素中用于提取文本的内容子节点（用于稳定性检测）
+   * 优先返回 markdownContent 子元素（排除时间戳等元数据），
+   * 若无则返回元素本身
+   */
+  getMessageContentNode(messageEl) {
+    return messageEl.querySelector(XIAOYUNQUE_SELECTORS.markdownContent) || messageEl;
   }
 
   async runFlow(text, imageBase64, imageName) {
@@ -501,8 +554,12 @@ class XiaoyunqueAgent extends BaseAgent {
     return new Promise((resolve, reject) => {
       let timeoutId;
       let prevTextLength = -1;
-      let unchangedTime = 0;
+      let unchangedCount = 0;  // 连续稳定的检测次数
       let generationStarted = false;
+
+      // 小云雀结果是一次性返回的，稳定 3 次（约 3s）即可判定完成
+      // 避免等满 5s 造成不必要的延迟
+      const STABLE_THRESHOLD = 3;
 
       const checkInterval = setInterval(() => {
         if (this.aborted) {
@@ -514,7 +571,9 @@ class XiaoyunqueAgent extends BaseAgent {
         if (messages.length === 0) return;
 
         const lastMessage = messages[messages.length - 1];
-        const currentText = lastMessage.innerText || lastMessage.textContent;
+        // 优先从 markdownContent 子节点提取文本，排除时间戳等元数据干扰
+        const contentNode = this.getMessageContentNode(lastMessage);
+        const currentText = contentNode.innerText || contentNode.textContent || '';
         const currentLength = currentText.trim().length;
 
         // 检测是否有新消息出现
@@ -525,19 +584,20 @@ class XiaoyunqueAgent extends BaseAgent {
         if (generationStarted) {
           if (currentLength > 0) {
             if (Math.abs(currentLength - prevTextLength) <= 2) {
-              unchangedTime += 1000;
+              unchangedCount++;
             } else {
-              unchangedTime = 0;
+              unchangedCount = 0;
               prevTextLength = currentLength;
             }
 
-            // 文本稳定 5 秒认为生成完成（小云雀生成视频等可能较慢）
-            if (unchangedTime >= 5000) {
+            // 文本连续稳定 STABLE_THRESHOLD 次认为生成完成
+            if (unchangedCount >= STABLE_THRESHOLD) {
               clearInterval(checkInterval);
               if (timeoutId) clearTimeout(timeoutId);
               console.log('[Xiaoyunque] Generation complete');
 
-              const finalText = this.extractStructuredContent(lastMessage);
+              // 使用 extractMessageText 过滤工具调用等无关区域
+              const finalText = this.extractMessageText(lastMessage);
               resolve({
                 text: finalText,
                 images: []
@@ -555,7 +615,7 @@ class XiaoyunqueAgent extends BaseAgent {
         if (messages.length > initialMessageCount) {
           const lastMessage = messages[messages.length - 1];
           resolve({
-            text: (lastMessage.innerText || lastMessage.textContent) + '\n[超时截止]',
+            text: this.extractMessageText(lastMessage) + '\n[超时截止]',
             images: []
           });
         } else {
