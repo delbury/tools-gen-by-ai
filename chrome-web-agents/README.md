@@ -1,6 +1,6 @@
 # Multi AI Agent Hub
 
-Chrome MV3 扩展插件，支持在一个统一的界面输入文本和图片，同时向多个 AI 平台（DeepSeek, 豆包, Kimi）发送请求，并在同一个窗口中等待、收集和展示所选平台生成的结果。
+Chrome MV3 扩展插件，支持在一个统一的界面输入文本和图片，同时向多个 AI 平台（DeepSeek, 豆包, Kimi, 小云雀）发送请求，并在同一个窗口中等待、收集和展示所选平台生成的结果。
 
 ## 特性
 
@@ -25,6 +25,7 @@ Chrome MV3 扩展插件，支持在一个统一的界面输入文本和图片，
    - DeepSeek: [https://chat.deepseek.com](https://chat.deepseek.com)
    - 豆包: [https://www.doubao.com](https://www.doubao.com)
    - Kimi: [https://kimi.moonshot.cn](https://kimi.moonshot.cn)
+   - 小云雀: [https://xyq.jianying.com](https://xyq.jianying.com)
 2. **交互**：
    - 点击浏览器工具栏的插件图标打开 Popup 界面。
    - 输入您要提问的文本或 Prompt。
