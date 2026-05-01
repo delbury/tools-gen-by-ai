@@ -77,6 +77,9 @@ class KimiAgent extends BaseAgent {
     const initialMessageElements = document.querySelectorAll(KIMI_SELECTORS.messageContainer);
     const initialMessages = initialMessageElements.length;
 
+    console.log('[Kimi] Waiting before submit to ensure input is registered...');
+    await new Promise(r => setTimeout(r, 1500));
+
     console.log('[Kimi] Submitting...');
     const enterEventOptions = {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
@@ -86,7 +89,7 @@ class KimiAgent extends BaseAgent {
     editor.dispatchEvent(new KeyboardEvent('keypress', enterEventOptions));
     editor.dispatchEvent(new KeyboardEvent('keyup', enterEventOptions));
     
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
     // If it's a contenteditable, sometimes we need to clear it or click the send button manually
     if (editor.textContent && editor.textContent.trim().length > 0) {
        console.log('[Kimi] Text still in editor, attempting to click send button...');

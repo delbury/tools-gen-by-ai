@@ -568,9 +568,8 @@ class XiaoyunqueAgent extends BaseAgent {
       let unchangedCount = 0;  // 连续稳定的检测次数
       let generationStarted = false;
 
-      // 小云雀结果是一次性返回的，稳定 3 次（约 3s）即可判定完成
-      // 避免等满 5s 造成不必要的延迟
-      const STABLE_THRESHOLD = 3;
+      // 小云雀结果有时分批返回且存在较长停顿，增加 10 次（约 10s）的稳定等待，确保完全生成
+      const STABLE_THRESHOLD = 10;
 
       const checkInterval = setInterval(() => {
         if (this.aborted) {
