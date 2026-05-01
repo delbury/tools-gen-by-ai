@@ -93,9 +93,20 @@ class KimiAgent extends BaseAgent {
        const sendBtnContainer = document.querySelector('.send-button-container, .send-button');
        if (sendBtnContainer) {
            console.log('[Kimi] Found specific send button, clicking...');
-           sendBtnContainer.click();
-           sendBtnContainer.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-           sendBtnContainer.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+           const mouseOpts = { bubbles: true, cancelable: true, view: window };
+           const dispatchAll = (el) => {
+               try { el.dispatchEvent(new PointerEvent('pointerdown', mouseOpts)); } catch(e){}
+               el.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+               try { el.dispatchEvent(new PointerEvent('pointerup', mouseOpts)); } catch(e){}
+               el.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+               el.dispatchEvent(new MouseEvent('click', mouseOpts));
+               if (typeof el.click === 'function') el.click();
+           };
+           
+           dispatchAll(sendBtnContainer);
+           
+           const svg = sendBtnContainer.querySelector('svg');
+           if (svg) dispatchAll(svg);
        } else {
            const parent = editor.closest('div[class*="input"], div[class*="chat"], div.chat-editor-action') || document.body;
            const buttons = parent.querySelectorAll('button, div[class*="send"]');

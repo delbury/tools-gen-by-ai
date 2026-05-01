@@ -263,11 +263,12 @@ class BaseAgent {
 
         if (tag === 'li') {
           if (!result.endsWith('\n')) result += '\n';
-          result += '- ';
+          // result += '- ';
         } else if (tag === 'br') {
           result += '\n';
         } else if (isBlock(tag) && tag !== 'li') {
-          if (!result.endsWith('\n\n')) result += '\n\n';
+          // 如果前面刚输出了列表项的 '- '，不要插入空行，否则会让 '-' 孤立成单独一段
+          if (!result.endsWith('\n\n') && !result.endsWith('- ')) result += '\n\n';
         }
 
         for (const child of node.childNodes) {

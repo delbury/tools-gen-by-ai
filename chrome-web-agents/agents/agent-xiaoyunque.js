@@ -15,12 +15,13 @@ const XIAOYUNQUE_SELECTORS = {
   // 消息内容区（markdown 文本所在子容器，排除时间戳等干扰元素）
   // 实际 DOM: <div class="markdownContent-o0w7gu">
   markdownContent: '[class*="markdownContent"], [class*="markdown-content"], [class*="messageContent"], [class*="message-content"]',
-  // 需要从消息中过滤掉的无关区域（工具调用、时间戳等）
-  // 实际 DOM: <div class="toolCallGroup-jJqCQI">、<div class="messageMeta-lLdj3s">
+  // 需要从消息中过滤掉的无关区域（工具调用、时间戳、建议行动按钮等）
+  // 实际 DOM: <div class="toolCallGroup-jJqCQI">、<div class="messageMeta-lLdj3s">、<div class="actionList-kPKp_U">
   noiseSelectors: [
     '[class*="toolCallGroup"], [class*="tool-call-group"]',
     '[class*="messageMeta"], [class*="message-meta"]',
     '[class*="toolCall"], [class*="tool-call"]:not([class*="group"])',
+    '[class*="actionList"], [class*="action-list"], [class*="suggestion"]'
   ],
 };
 
@@ -313,6 +314,9 @@ class XiaoyunqueAgent extends BaseAgent {
    * @returns {string} 过滤后的纯净文本
    */
   extractMessageText(messageEl) {
+    // 检查原始 DOM 是否包含工具调用
+    const hasToolCall = !!messageEl.querySelector('[class*="toolCallGroup"], [class*="tool-call-group"]');
+
     // 克隆节点，避免修改真实 DOM
     const clone = messageEl.cloneNode(true);
 
@@ -329,7 +333,11 @@ class XiaoyunqueAgent extends BaseAgent {
       const parts = [];
       if (plainContent) {
         const plainText = (plainContent.innerText || plainContent.textContent || '').trim();
-        if (plainText) parts.push(plainText);
+        // 过滤掉工具调用或典型的思考过程话语
+        const isThinking = hasToolCall || plainText.includes('让我先') || plainText.includes('理解素材') || plainText.includes('搜索') || plainText.includes('稍等') || plainText.includes('正在');
+        if (plainText && !isThinking) {
+          parts.push(plainText);
+        }
       }
       parts.push(this.extractStructuredContent(markdownContent));
       return parts.filter(Boolean).join('\n\n');
@@ -345,7 +353,8 @@ class XiaoyunqueAgent extends BaseAgent {
    * 若无则返回元素本身
    */
   getMessageContentNode(messageEl) {
-    return messageEl.querySelector(XIAOYUNQUE_SELECTORS.markdownContent) || messageEl;
+    return messageEl.querySelector(XIAOYUNQUE_SELECTORS.markdownContent) || 
+           messageEl.querySelector('[class*="plainContent"], [class*="plain-content"]');
   }
 
   async runFlow(text, imageBase64, imageName) {
@@ -421,6 +430,8 @@ class XiaoyunqueAgent extends BaseAgent {
     if (this.aborted) return;
 
     if (readyBtn) {
+      // 增加延时确保图片或文本完全绑定，防止无法正常提交图片
+      await new Promise(r => setTimeout(r, 1000));
       // 直接点击已就绪的提交按钮
       readyBtn.click();
       console.log('[Xiaoyunque] Clicked submit button (after waiting for enabled)');
@@ -571,8 +582,32 @@ class XiaoyunqueAgent extends BaseAgent {
         if (messages.length === 0) return;
 
         const lastMessage = messages[messages.length - 1];
-        // 优先从 markdownContent 子节点提取文本，排除时间戳等元数据干扰
-        const contentNode = this.getMessageContentNode(lastMessage);
+        // 优先从 markdownContent 或 plainContent 子节点提取文本
+        let contentNode = this.getMessageContentNode(lastMessage);
+        
+        const hasToolCall = lastMessage.querySelector('[class*="toolCallGroup"], [class*="tool-call-group"]');
+        const hasActionChips = lastMessage.querySelector('[class*="actionList"], [class*="action-list"], [class*="suggestion"]');
+
+        // 如果有工具调用，且尚未完成（没有已完成相关的文本或图标），说明工具还在运行中
+        if (hasToolCall) {
+          const toolHtml = lastMessage.innerHTML;
+          const toolCompleted = toolHtml.includes('已完成') || toolHtml.includes('successIcon') || toolHtml.includes('完成');
+          if (!toolCompleted) {
+            return; // 继续等待工具调用完成
+          }
+        }
+
+        // 如果内容节点（markdownContent 或 plainContent）还没生成，说明核心回复还没开始
+        if (!contentNode) {
+          const tempText = (lastMessage.innerText || lastMessage.textContent || '').trim();
+          // 除非遇到明显的报错信息，否则应该继续等待内容节点出现，防止过早触发稳定检测
+          if (!tempText.includes('失败') && !tempText.includes('错误') && !tempText.includes('error')) {
+            return;
+          }
+          // 如果真的出错了，兜底：退化为使用整个节点
+          contentNode = lastMessage;
+        }
+
         const currentText = contentNode.innerText || contentNode.textContent || '';
         const currentLength = currentText.trim().length;
 
@@ -583,6 +618,11 @@ class XiaoyunqueAgent extends BaseAgent {
 
         if (generationStarted) {
           if (currentLength > 0) {
+            // 如果出现了底部的操作建议按钮（Action Chips），说明 AI 回复已 100% 结束
+            if (hasActionChips) {
+              unchangedCount += 3; // 快速满足完成条件
+            }
+
             if (Math.abs(currentLength - prevTextLength) <= 2) {
               unchangedCount++;
             } else {
@@ -590,7 +630,7 @@ class XiaoyunqueAgent extends BaseAgent {
               prevTextLength = currentLength;
             }
 
-            // 文本连续稳定 STABLE_THRESHOLD 次认为生成完成
+            // 文本连续稳定 STABLE_THRESHOLD 次，判定生成完成
             if (unchangedCount >= STABLE_THRESHOLD) {
               clearInterval(checkInterval);
               if (timeoutId) clearTimeout(timeoutId);
