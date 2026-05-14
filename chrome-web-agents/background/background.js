@@ -26,6 +26,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleCancelTask(message.payload);
     sendResponse({ success: true });
   }
+
+  if (message.type === 'RETRY_GET_RESULT') {
+    handleRetryGetResult(message.payload);
+    sendResponse({ success: true });
+  }
 });
 
 // ─── Task Entry Point ──────────────────────────────────────────────────────────
@@ -181,9 +186,47 @@ async function handleCancelTask(payload) {
   }
 }
 
+// ─── Retry Get Result Handler ──────────────────────────────────────────────────
+
+async function handleRetryGetResult(payload) {
+  const { taskId, agentId } = payload;
+  console.log(`[Task ${taskId}] Retrying extraction for ${agentId}`);
+
+  try {
+    const tab = await getOrCreateAgentTab(agentId, true); // skipUrlUpdate = true
+    try {
+      await chrome.tabs.update(tab.id, { active: true });
+    } catch (e) {
+      console.warn(`[${agentId}] Failed to activate tab:`, e);
+    }
+
+    const sendSuccess = await trySendMessage(tab.id, {
+      type: 'RETRY_EXTRACT_RESULT',
+      payload: { taskId, agentId }
+    });
+
+    if (!sendSuccess) {
+      sendTaskUpdate({
+        taskId,
+        agent: agentId,
+        status: 'error',
+        error: '无法连接到该页面的 Content Script，请尝试手动刷新页面。'
+      });
+    }
+  } catch (error) {
+    console.error(`Failed to handle retry for ${agentId}:`, error);
+    sendTaskUpdate({
+      taskId,
+      agent: agentId,
+      status: 'error',
+      error: '无法打开或连接标签页。'
+    });
+  }
+}
+
 // ─── Tab Management ────────────────────────────────────────────────────────────
 
-async function getOrCreateAgentTab(agentId) {
+async function getOrCreateAgentTab(agentId, skipUrlUpdate = false) {
   const targetUrl = AGENT_URLS[agentId];
   const urlParams = new URL(targetUrl);
   const host = urlParams.hostname;
@@ -211,10 +254,14 @@ async function getOrCreateAgentTab(agentId) {
 
     try {
       const updateProps = {};
-      if (existingTab.url !== targetUrl) {
+      if (!skipUrlUpdate && existingTab.url !== targetUrl) {
         updateProps.url = targetUrl;
       }
-      await chrome.tabs.update(existingTab.id, updateProps);
+      if (Object.keys(updateProps).length > 0) {
+        await chrome.tabs.update(existingTab.id, updateProps);
+      } else {
+        return existingTab;
+      }
     } catch (e) {
       console.error(e);
     }

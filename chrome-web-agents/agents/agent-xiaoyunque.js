@@ -663,6 +663,16 @@ class XiaoyunqueAgent extends BaseAgent {
       }, 180000);
     });
   }
+
+  retryExtractResult() {
+    const messages = this.getBotMessages();
+    if (messages.length === 0) {
+      throw new Error('未找到任何回复');
+    }
+    const lastMessage = messages[messages.length - 1];
+    const text = this.extractMessageText(lastMessage);
+    return { text, images: [] };
+  }
 }
 
 new XiaoyunqueAgent();

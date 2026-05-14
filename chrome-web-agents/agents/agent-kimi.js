@@ -145,6 +145,20 @@ class KimiAgent extends BaseAgent {
     });
   }
 
+  extractMessageText(messageEl) {
+    const clone = messageEl.cloneNode(true);
+    const noiseSelectors = [
+      '.toolcall-container', 
+      '.thinking-container',
+      '[class*="toolcall"]',
+      '[class*="thinking"]'
+    ];
+    noiseSelectors.forEach(sel => {
+      clone.querySelectorAll(sel).forEach(el => el.remove());
+    });
+    return this.extractStructuredContent(clone);
+  }
+
   async waitForResponse(initialMessageCount) {
     return new Promise((resolve, reject) => {
       let timeoutId;
@@ -154,7 +168,7 @@ class KimiAgent extends BaseAgent {
         const messages = document.querySelectorAll(KIMI_SELECTORS.messageContainer);
         if (messages.length > initialMessageCount) {
           const lastMessage = messages[messages.length - 1];
-          const extractedText = this.extractStructuredContent(lastMessage);
+          const extractedText = this.extractMessageText(lastMessage);
           
           // 必须严格匹配具体的完成按钮（如 Copy 复制按钮），不能只匹配容器，因为容器在生成中就已经存在
           const isDoneByAction = !!lastMessage.querySelector('svg[name="Copy"], svg[name="Refresh"], [aria-label*="复制"]');
@@ -201,6 +215,16 @@ class KimiAgent extends BaseAgent {
         }
       }, 120000);
     });
+  }
+
+  retryExtractResult() {
+    const messages = document.querySelectorAll(KIMI_SELECTORS.messageContainer);
+    if (messages.length === 0) {
+      throw new Error('未找到任何回复');
+    }
+    const lastMessage = messages[messages.length - 1];
+    const text = this.extractMessageText(lastMessage);
+    return { text, images: [] };
   }
 }
 

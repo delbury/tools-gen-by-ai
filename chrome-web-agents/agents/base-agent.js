@@ -38,6 +38,34 @@ class BaseAgent {
         sendResponse({ received: true });
         return true;
       }
+      
+      if (message.type === 'RETRY_EXTRACT_RESULT' && message.payload.agentId === this.agentId) {
+        this.taskId = message.payload.taskId;
+        this.reportStatus('running'); // Provide visual feedback that extraction is happening
+        
+        try {
+          if (typeof this.retryExtractResult === 'function') {
+            const result = this.retryExtractResult();
+            if (result instanceof Promise) {
+              result.then(res => {
+                this.reportStatus('done', res ? res.text : null, res ? res.images : null);
+              }).catch(err => {
+                console.error(`[${this.agentId}] Retry extract error:`, err);
+                this.reportStatus('error', null, null, err.toString());
+              });
+            } else {
+              this.reportStatus('done', result ? result.text : null, result ? result.images : null);
+            }
+          } else {
+            throw new Error('此 Agent 暂不支持重新获取结果');
+          }
+        } catch (err) {
+          console.error(`[${this.agentId}] Retry extract error:`, err);
+          this.reportStatus('error', null, null, err.toString());
+        }
+        sendResponse({ received: true });
+        return true;
+      }
     });
   }
 

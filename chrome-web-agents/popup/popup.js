@@ -85,6 +85,26 @@ resultsContainer.addEventListener('click', (e) => {
         });
       }
     }
+  } else if (e.target.classList.contains('retry-btn') || e.target.closest('.retry-btn')) {
+    const btn = e.target.classList.contains('retry-btn') ? e.target : e.target.closest('.retry-btn');
+    const card = btn.closest('.result-card');
+    if (card) {
+      const agentId = card.id.replace('result-', '');
+      if (currentTaskId && agentId) {
+        const originalText = btn.textContent;
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        setTimeout(() => { 
+          btn.textContent = originalText; 
+          btn.disabled = false;
+        }, 1500);
+        
+        chrome.runtime.sendMessage({
+          type: 'RETRY_GET_RESULT',
+          payload: { taskId: currentTaskId, agentId: agentId }
+        });
+      }
+    }
   }
 });
 
@@ -166,12 +186,16 @@ chrome.storage.local.get(['agentStates', 'inputText', 'imageBase64', 'imageName'
             if (state.rawResult && state.rawResult.trim() !== '') {
               copyBtn.classList.remove('hidden');
             }
+            const retryBtnDone = card.querySelector('.retry-btn');
+            if (retryBtnDone) retryBtnDone.classList.remove('hidden');
             break;
           case 'error': 
             statusEl.textContent = '失败';
             if (state.rawResult && state.rawResult.trim() !== '') {
               copyBtn.classList.remove('hidden');
             }
+            const retryBtnErr = card.querySelector('.retry-btn');
+            if (retryBtnErr) retryBtnErr.classList.remove('hidden');
             break;
         }
       }
@@ -298,6 +322,7 @@ function createResultCard(agentId) {
     <div class="result-header">
       <span class="result-agent-name">${AgentNames[agentId] || agentId}</span>
       <div class="result-header-actions">
+        <button class="retry-btn hidden" title="重新获取结果">🔄 提取</button>
         <button class="copy-btn hidden" title="复制返回文本">📋 复制</button>
         <span class="result-status">准备中</span>
       </div>
@@ -324,11 +349,18 @@ function updateResultCard(payload) {
   const statusEl = card.querySelector('.result-status');
   const contentEl = card.querySelector('.result-content');
   const copyBtn = card.querySelector('.copy-btn');
+  const retryBtn = card.querySelector('.retry-btn');
 
   if ((status === 'done' || status === 'error') && result && result.trim() !== '') {
     copyBtn.classList.remove('hidden');
   } else {
     copyBtn.classList.add('hidden');
+  }
+
+  if (status === 'done' || status === 'error') {
+    if (retryBtn) retryBtn.classList.remove('hidden');
+  } else {
+    if (retryBtn) retryBtn.classList.add('hidden');
   }
 
   switch (status) {

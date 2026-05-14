@@ -145,6 +145,16 @@ class DeepSeekAgent extends BaseAgent {
       }, 120000);
     });
   }
+
+  retryExtractResult() {
+    const messages = document.querySelectorAll(DEEPSEEK_SELECTORS.messageContainer);
+    if (messages.length === 0) {
+      throw new Error('未找到任何回复');
+    }
+    const lastMessage = messages[messages.length - 1];
+    const text = this.extractStructuredContent(lastMessage);
+    return { text, images: [] };
+  }
 }
 
 // Instantiate to register listener

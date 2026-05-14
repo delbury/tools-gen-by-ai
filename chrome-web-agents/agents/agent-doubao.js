@@ -192,6 +192,16 @@ class DoubaoAgent extends BaseAgent {
       }, 120000);
     });
   }
+
+  retryExtractResult() {
+    const messages = this.getBotMessages();
+    if (messages.length === 0) {
+      throw new Error('未找到任何回复');
+    }
+    const lastMessage = messages[messages.length - 1];
+    const text = this.extractStructuredContent(lastMessage);
+    return { text, images: [] };
+  }
 }
 
 new DoubaoAgent();
