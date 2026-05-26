@@ -3,7 +3,7 @@ const DOUBAO_SELECTORS = {
   textarea: '#chat-input, textarea.semi-input-textarea, textarea[placeholder*="发消息"], textarea, div[contenteditable="true"]',
   fileInput: 'input[type="file"]',
   // 只计算机器人的回复（或者文本内容部分），避免取到用户的消息导致提前结束
-  messageContainer: '[data-testid="bot_message_content"], [class*="markdown-body"], .flow-markdown-body, div[class*="bot-interactive-message"], [class*="message-content"], [data-testid*="message_content"]',
+  messageContainer: '[data-testid="bot_message_content"], [class*="markdown-body"], .flow-markdown-body, div[class*="bot-interactive-message"], [class*="message-content"], [data-testid*="message_content"], .md-box-root, [class*="md-box-root"]',
 };
 
 class DoubaoAgent extends BaseAgent {
